@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/autocompleteKeys",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json",
+      "cache-control: max-age=300, must-revalidate"
+    ],
+    "body": [
+      "grow.test",
+      "http.method"
+    ]
+  }
+}

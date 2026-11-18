@@ -1,4 +1,4 @@
-// Service-owned: generated once by sdk-kit, then maintained in this repository.
+// Service-owned: ZipkinConfig — connection settings of the Zipkin query and ingest APIs.
 
 import {
   type CommonConfig,
@@ -9,42 +9,74 @@ import {
   EnvReader,
   type Hooks,
   type ClientLogger,
-  REDACTED,
   type RetryPolicy,
-  Secret,
   type TlsOptions,
   describeCommonConfig,
+  isSensitiveHeader,
   mergeOptions,
   readCommonEnv,
+  redactUrl,
   resolveCommonConfig,
-  secretValues,
   validateCommonConfig,
 } from "./core/index.js";
 
 const INSPECT = Symbol.for("nodejs.util.inspect.custom");
 
-/** Port text from the stack catalog; the default URL uses its first number. */
-const CATALOG_PORT = "9411";
+/** Path of the Zipkin v2 span ingest API. */
+export const SPANS_PATH = "/api/v2/spans";
 
 /** Options accepted by {@link ZipkinConfig} (all optional). */
 export interface ZipkinConfigOptions extends CommonConfigOptions {
-  /** API token sent as `Authorization: Bearer <token>` (env `GROW_ZIPKIN_TOKEN`). */
-  token?: string | Secret;
+  /**
+   * Base URL of the Zipkin server (port 9411). A gateway path prefix is kept
+   * (`https://gw.example/zipkin` → `https://gw.example/zipkin/api/v2/...`). Stock Zipkin has no
+   * authentication: put gateway credentials in `headers` (they are redacted everywhere).
+   * Env `GROW_ZIPKIN_URL`, then `ZIPKIN_URL`, then the base of `OTEL_EXPORTER_ZIPKIN_ENDPOINT`.
+   * Default `http://127.0.0.1:9411`.
+   */
+  url?: string;
+  /**
+   * Full span ingest URL used by {@link ZipkinReporter} and the tracing exporter. Env
+   * `GROW_ZIPKIN_ENDPOINT`, then `OTEL_EXPORTER_ZIPKIN_ENDPOINT` (used verbatim). Default
+   * `<url>/api/v2/spans`.
+   */
+  endpoint?: string;
+}
+
+/** Vendor environment variables read after `GROW_ZIPKIN_*`, in order. */
+export const VENDOR_ENV: CommonVendorEnv & { endpoint: readonly string[] } = {
+  url: ["ZIPKIN_URL"],
+  endpoint: ["OTEL_EXPORTER_ZIPKIN_ENDPOINT"],
+};
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Vendor environment variables read after `GROW_ZIPKIN_*`, in order
- * (e.g. `BAO_ADDR` then `VAULT_ADDR`). Filled in by the service.
+ * `<base>/api/v2/spans`, appended once: a base that already ends with the spans path is kept, a
+ * gateway prefix is preserved, trailing slashes are dropped.
  */
-export const VENDOR_ENV: CommonVendorEnv & { token: readonly string[] } = {
-  url: [],
-  token: [],
-};
+export function spansEndpoint(base: string): string {
+  const trimmed = base.replace(/\/+$/, "");
+  return trimmed.endsWith(SPANS_PATH) ? trimmed : `${trimmed}${SPANS_PATH}`;
+}
+
+/** The server base URL of a spans endpoint: strips one trailing `/api/v2/spans` (and slashes). */
+export function baseFromEndpoint(endpoint: string): string {
+  const trimmed = endpoint.replace(/\/+$/, "");
+  return trimmed.endsWith(SPANS_PATH) ? trimmed.slice(0, -SPANS_PATH.length) : trimmed;
+}
 
 /** Immutable configuration of {@link ZipkinClient}. */
 export class ZipkinConfig implements CommonConfig {
-  /** Default endpoint. */
-  static readonly DEFAULT_URL = `http://127.0.0.1:${/\d+/.exec(CATALOG_PORT)?.[0] ?? "8080"}`;
+  /** Default server URL. */
+  static readonly DEFAULT_URL = "http://127.0.0.1:9411";
   /** Prefix of every environment variable. */
   static readonly ENV_PREFIX = "GROW_ZIPKIN_";
 
@@ -59,8 +91,8 @@ export class ZipkinConfig implements CommonConfig {
   readonly userAgentSuffix?: string;
   readonly hooks?: Hooks;
   readonly logger?: ClientLogger;
-  /** API token. */
-  readonly token?: Secret;
+  /** Span ingest URL (`<url>/api/v2/spans` unless set). */
+  readonly endpoint: string;
 
   /** Applies defaults, validates (throws {@link ConfigError}) and freezes. */
   constructor(options: ZipkinConfigOptions = {}) {
@@ -76,8 +108,10 @@ export class ZipkinConfig implements CommonConfig {
     if (common.userAgentSuffix !== undefined) this.userAgentSuffix = common.userAgentSuffix;
     if (common.hooks !== undefined) this.hooks = common.hooks;
     if (common.logger !== undefined) this.logger = common.logger;
-    const token = Secret.from(options.token);
-    if (token !== undefined) this.token = token;
+    this.endpoint =
+      options.endpoint !== undefined && options.endpoint !== ""
+        ? options.endpoint
+        : spansEndpoint(this.url);
     this.validate();
     Object.freeze(this);
   }
@@ -90,32 +124,42 @@ export class ZipkinConfig implements CommonConfig {
 
   /**
    * Builds a config from the environment. Precedence: explicit `overrides` >
-   * `GROW_ZIPKIN_<NAME>` > vendor variables ({@link VENDOR_ENV}) > defaults.
+   * `GROW_ZIPKIN_<NAME>` > vendor variables > defaults.
+   *
+   * - `url`: `GROW_ZIPKIN_URL` > `ZIPKIN_URL` > `OTEL_EXPORTER_ZIPKIN_ENDPOINT` without its
+   *   trailing `/api/v2/spans` > `http://127.0.0.1:9411`.
+   * - `endpoint`: `GROW_ZIPKIN_ENDPOINT` > `OTEL_EXPORTER_ZIPKIN_ENDPOINT` > `<url>/api/v2/spans`.
+   * - Timeouts, retries, TLS and proxy: the common `GROW_ZIPKIN_*` variables (SPEC §2.2).
    */
-  static fromEnv(overrides: ZipkinConfigOptions = {}, env: EnvMap = process.env) {
+  static fromEnv(overrides: ZipkinConfigOptions = {}, env: EnvMap = process.env): ZipkinConfig {
     const reader = new EnvReader(ZipkinConfig.ENV_PREFIX, env);
     const fromEnv: ZipkinConfigOptions = readCommonEnv(reader, VENDOR_ENV);
-    const token = reader.secret("TOKEN", VENDOR_ENV.token);
-    if (token !== undefined) fromEnv.token = token;
+    const endpoint = reader.string("ENDPOINT", VENDOR_ENV.endpoint);
+    if (endpoint !== undefined) fromEnv.endpoint = endpoint;
+    const otelEndpoint = env.OTEL_EXPORTER_ZIPKIN_ENDPOINT;
+    if (fromEnv.url === undefined && otelEndpoint !== undefined && otelEndpoint !== "")
+      fromEnv.url = baseFromEndpoint(otelEndpoint);
     const merged = mergeOptions<ZipkinConfigOptions>(fromEnv, overrides);
     return new ZipkinConfig(merged);
   }
 
-  /** Throws {@link ConfigError} when a setting is invalid. Service rules go here. */
+  /** Throws {@link ConfigError} when a setting is invalid. */
   validate(): void {
     validateCommonConfig(this);
-    if (this.token?.reveal().trim() === "")
-      throw new ConfigError("invalid configuration: token must not be blank");
+    if (!isHttpUrl(this.endpoint))
+      throw new ConfigError("invalid configuration: endpoint must be an http or https URL");
   }
 
-  /** Credential values to redact from error messages and logs. */
+  /** Credential values to redact from error messages and logs (sensitive header values). */
   knownSecrets(): string[] {
-    return secretValues(this.token);
+    return Object.entries(this.headers)
+      .filter(([name, value]) => isSensitiveHeader(name) && value !== "")
+      .map(([, value]) => value);
   }
 
   /** Debug form with every credential redacted. */
   toJSON(): Record<string, unknown> {
-    return { ...describeCommonConfig(this), token: this.token === undefined ? null : REDACTED };
+    return { ...describeCommonConfig(this), endpoint: redactUrl(this.endpoint) };
   }
 
   toString(): string {

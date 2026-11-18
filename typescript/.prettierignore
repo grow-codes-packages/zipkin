@@ -19,3 +19,4 @@ test/tracing/
 test/testing/
 test/helpers/
 *.md
+test/fixtures/

@@ -5,43 +5,46 @@ import {
   PACKAGE_KEY,
   REDACTED,
   RetryPolicy,
-  Secret,
-  VENDOR_ENV,
   ZipkinClient,
   ZipkinConfig,
-  ZipkinError,
+  ZipkinQueryClient,
+  ZipkinReporter,
+  baseFromEndpoint,
+  spansEndpoint,
 } from "../src/index.js";
 import { type MockServer, closedPort, startServer } from "./helpers/server.js";
+import { fakeZipkin, zipkinServer } from "./helpers/zipkin.js";
 
-const servers: MockServer[] = [];
+const servers: { close(): Promise<void> }[] = [];
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => s.close()));
 });
 
-async function demoServer(token = "t0ken-value"): Promise<MockServer> {
-  const s = await startServer((req) => {
-    if (req.url === "/health") return { status: 200, body: { status: "ok", version: "1.2.3" } };
-    if (req.url === "/version") return { status: 200, body: { version: "1.2.3" } };
-    if (req.url === "/v1/ping") {
-      return req.headers.authorization === `Bearer ${token}`
-        ? { status: 200, body: { pong: true } }
-        : { status: 401, body: { message: "bad token" } };
-    }
-    return { status: 404 };
-  });
-  servers.push(s);
-  return s;
+async function track<T extends { close(): Promise<void> }>(s: Promise<T>): Promise<T> {
+  const server = await s;
+  servers.push(server);
+  return server;
 }
 
 const fast = { retry: { maxRetries: 1, initialBackoffMs: 1 } };
 
+function stockServer(): Promise<MockServer> {
+  return track(
+    zipkinServer({
+      "/health": "health.ok",
+      "/info": "serverVersion.ok",
+      "/api/v2/services": "listServices.ok",
+    }),
+  );
+}
+
 describe("ZipkinConfig", () => {
   it("uses defaults and freezes", () => {
     const c = new ZipkinConfig();
-    expect(c.url).toBe(ZipkinConfig.DEFAULT_URL);
+    expect(c.url).toBe("http://127.0.0.1:9411");
+    expect(c.endpoint).toBe("http://127.0.0.1:9411/api/v2/spans");
     expect(c.requestTimeoutMs).toBe(30_000);
     expect(c.retry).toBeInstanceOf(RetryPolicy);
-    expect(c.token).toBeUndefined();
     expect(Object.isFrozen(c)).toBe(true);
     expect(ZipkinConfig.from(c)).toBe(c);
     expect(ZipkinConfig.from().url).toBe(c.url);
@@ -49,154 +52,189 @@ describe("ZipkinConfig", () => {
     expect(ZipkinConfig.ENV_PREFIX).toBe(prefix);
   });
 
-  it("keeps optional settings", () => {
+  it("keeps a gateway prefix and optional settings", () => {
     const hooks = {};
     const logger = { debug() {}, info() {}, warn() {}, error() {} };
     const c = new ZipkinConfig({
+      url: "https://gw.example/zipkin/",
       proxy: "http://p:1",
       userAgentSuffix: "s",
       hooks,
       logger,
-      token: new Secret("abcd"),
+      headers: { Authorization: "Bearer gw-secret", "x-team": "sdk", "x-api-key": "" },
     });
+    expect(c.endpoint).toBe("https://gw.example/zipkin/api/v2/spans");
     expect(c.proxy).toBe("http://p:1");
     expect(c.userAgentSuffix).toBe("s");
     expect(c.hooks).toBe(hooks);
     expect(c.logger).toBe(logger);
-    expect(c.knownSecrets()).toEqual(["abcd"]);
+    expect(c.knownSecrets()).toEqual(["Bearer gw-secret"]);
+    expect(new ZipkinConfig({ endpoint: "" }).endpoint).toBe("http://127.0.0.1:9411/api/v2/spans");
+  });
+
+  it("spansEndpoint / baseFromEndpoint append and strip once", () => {
+    expect(spansEndpoint("http://z:9411")).toBe("http://z:9411/api/v2/spans");
+    expect(spansEndpoint("http://z:9411/api/v2/spans/")).toBe("http://z:9411/api/v2/spans");
+    expect(baseFromEndpoint("http://z/p/api/v2/spans")).toBe("http://z/p");
+    expect(baseFromEndpoint("http://z/other/")).toBe("http://z/other");
   });
 
   it("validate() raises ConfigError", () => {
     expect(() => new ZipkinConfig({ url: "ftp://x" })).toThrow(ConfigError);
-    expect(() => new ZipkinConfig({ token: "   " })).toThrow(ConfigError);
+    expect(() => new ZipkinConfig({ endpoint: "nope" })).toThrow(ConfigError);
   });
 
   it("core.redaction.config: toString/JSON/inspect hide credentials", () => {
     const c = new ZipkinConfig({
-      token: "super-secret-tok",
+      endpoint: "http://user:pw-secret@z:9411/api/v2/spans",
       headers: { "x-api-key": "hdr-secret" },
     });
-    for (const form of [String(c), JSON.stringify(c), inspect(c), `${c.token}`]) {
-      expect(form).not.toContain("super-secret-tok");
+    for (const form of [String(c), JSON.stringify(c), inspect(c)]) {
       expect(form).not.toContain("hdr-secret");
+      expect(form).not.toContain("pw-secret");
     }
     expect(String(c)).toContain(REDACTED);
-    expect(String(c)).toMatch(/Config\(/);
-    expect(new ZipkinConfig().toJSON().token).toBeNull();
+    expect(String(c)).toMatch(/^ZipkinConfig\(/);
   });
 
   it("core.config.env-precedence: explicit > GROW_* > vendor > default", () => {
-    const prefix = ZipkinConfig.ENV_PREFIX;
-    const vendor = VENDOR_ENV as { url: string[]; token: string[] };
-    const saved = { url: vendor.url, token: vendor.token };
-    vendor.url = ["VENDOR_ADDR"];
-    vendor.token = ["VENDOR_TOKEN"];
+    const env = {
+      GROW_ZIPKIN_URL: "http://grow:1",
+      ZIPKIN_URL: "http://vendor:2",
+      OTEL_EXPORTER_ZIPKIN_ENDPOINT: "http://otel:3/prefix/api/v2/spans",
+      GROW_ZIPKIN_REQUEST_TIMEOUT: "5s",
+      GROW_ZIPKIN_MAX_RETRIES: "7",
+    };
+    const fromEnv = ZipkinConfig.fromEnv({}, env);
+    expect(fromEnv.url).toBe("http://grow:1");
+    expect(fromEnv.endpoint).toBe("http://otel:3/prefix/api/v2/spans");
+    expect(fromEnv.requestTimeoutMs).toBe(5000);
+    expect(fromEnv.retry.maxRetries).toBe(7);
+
+    const vendor = ZipkinConfig.fromEnv({}, { ZIPKIN_URL: "http://vendor:2" });
+    expect(vendor.url).toBe("http://vendor:2");
+    expect(vendor.endpoint).toBe("http://vendor:2/api/v2/spans");
+
+    const otelOnly = ZipkinConfig.fromEnv(
+      {},
+      { OTEL_EXPORTER_ZIPKIN_ENDPOINT: "https://gw/zipkin/api/v2/spans" },
+    );
+    expect(otelOnly.url).toBe("https://gw/zipkin");
+    expect(otelOnly.endpoint).toBe("https://gw/zipkin/api/v2/spans");
+
+    const growEndpoint = ZipkinConfig.fromEnv(
+      {},
+      { ...env, GROW_ZIPKIN_ENDPOINT: "http://grow-ep:4/api/v2/spans" },
+    );
+    expect(growEndpoint.endpoint).toBe("http://grow-ep:4/api/v2/spans");
+
+    const explicit = ZipkinConfig.fromEnv(
+      { url: "http://explicit:3", endpoint: "http://explicit:3/x", retry: { initialBackoffMs: 1 } },
+      env,
+    );
+    expect(explicit.url).toBe("http://explicit:3");
+    expect(explicit.endpoint).toBe("http://explicit:3/x");
+    expect(explicit.retry.maxRetries).toBe(7);
+    expect(ZipkinConfig.fromEnv({}, {}).url).toBe(ZipkinConfig.DEFAULT_URL);
+    expect(ZipkinConfig.fromEnv().url).toBeTypeOf("string");
+
+    let err: unknown;
     try {
-      const env = {
-        [`${prefix}URL`]: "http://grow:1",
-        VENDOR_ADDR: "http://vendor:2",
-        VENDOR_TOKEN: "vendor-token",
-        [`${prefix}REQUEST_TIMEOUT`]: "5s",
-        [`${prefix}MAX_RETRIES`]: "7",
-      };
-      const fromEnv = ZipkinConfig.fromEnv({}, env);
-      expect(fromEnv.url).toBe("http://grow:1");
-      expect(fromEnv.token?.reveal()).toBe("vendor-token");
-      expect(fromEnv.requestTimeoutMs).toBe(5000);
-      expect(fromEnv.retry.maxRetries).toBe(7);
-      expect(fromEnv.connectTimeoutMs).toBe(10_000);
-
-      const vendorOnly = ZipkinConfig.fromEnv({}, { VENDOR_ADDR: "http://vendor:2" });
-      expect(vendorOnly.url).toBe("http://vendor:2");
-
-      const explicit = ZipkinConfig.fromEnv(
-        { url: "http://explicit:3", token: "explicit-token", retry: { initialBackoffMs: 1 } },
-        env,
-      );
-      expect(explicit.url).toBe("http://explicit:3");
-      expect(explicit.token?.reveal()).toBe("explicit-token");
-      expect(explicit.retry.maxRetries).toBe(7);
-      expect(explicit.retry.initialBackoffMs).toBe(1);
-
-      expect(ZipkinConfig.fromEnv({}, {}).url).toBe(ZipkinConfig.DEFAULT_URL);
-      expect(ZipkinConfig.fromEnv().url).toBeTypeOf("string");
-
-      let err: unknown;
-      try {
-        ZipkinConfig.fromEnv({}, { [`${prefix}TOTAL_TIMEOUT`]: "forever-and-secret" });
-      } catch (e) {
-        err = e;
-      }
-      expect(err).toBeInstanceOf(ConfigError);
-      expect((err as Error).message).toContain(`${prefix}TOTAL_TIMEOUT`);
-      expect((err as Error).message).not.toContain("forever-and-secret");
-    } finally {
-      vendor.url = saved.url;
-      vendor.token = saved.token;
+      ZipkinConfig.fromEnv({}, { GROW_ZIPKIN_TOTAL_TIMEOUT: "forever-and-secret" });
+    } catch (e) {
+      err = e;
     }
+    expect(err).toBeInstanceOf(ConfigError);
+    expect((err as Error).message).toContain("GROW_ZIPKIN_TOTAL_TIMEOUT");
+    expect((err as Error).message).not.toContain("forever-and-secret");
   });
 });
 
 describe("ZipkinClient", () => {
-  it("health, ping and serverVersion against the demo API", async () => {
-    const s = await demoServer();
-    const client = new ZipkinClient({ url: s.url, token: "t0ken-value", ...fast });
-    expect(await client.health()).toEqual({
-      healthy: true,
-      status: "ok",
-      details: { version: "1.2.3" },
-    });
+  it("health, ping, serverInfo and serverVersion against recorded responses", async () => {
+    const s = await stockServer();
+    const client = new ZipkinClient({ url: s.url, ...fast });
+    const health = await client.health();
+    expect(health).toMatchObject({ healthy: true, status: "UP" });
+    expect(health.details.zipkin).toBe("UP");
+    expect(health.details.storage).toContain("InMemoryStorage");
     expect(await client.ping()).toBeGreaterThanOrEqual(0);
-    expect(await client.serverVersion()).toBe("1.2.3");
+    expect(await client.serverVersion()).toBe("3.6.1");
+    expect(await client.serverInfo()).toEqual({ version: "3.6.1", commit: "b2b0c98" });
     expect(client.transport.userAgent).toContain(`grow-codes-${PACKAGE_KEY}/`);
+    expect(s.requests.map((r) => r.url)).toEqual(["/health", "/api/v2/services", "/info", "/info"]);
+    expect(client.query).toBeInstanceOf(ZipkinQueryClient);
+    expect(client.query).toBe(client.query);
+    expect(client.reporter).toBeInstanceOf(ZipkinReporter);
+    expect(client.reporter).toBe(client.reporter);
+    expect(client.createReporter({ compression: "gzip" }).compression).toBe("gzip");
     await client.close();
   });
 
-  it("ping with a bad token raises AuthenticationError without leaking it", async () => {
-    const s = await demoServer();
-    const client = new ZipkinClient(
-      new ZipkinConfig({ url: s.url, token: "wrong-token-xyz", ...fast }),
-    );
+  it("sends gateway headers on every call", async () => {
+    const s = await stockServer();
+    const client = new ZipkinClient({ url: s.url, headers: { authorization: "Bearer gw" } });
+    await client.ping();
+    expect(s.requests[0]?.headers.authorization).toBe("Bearer gw");
+    await client.close();
+  });
+
+  it("gateway 401 maps to AuthenticationError without leaking the header", async () => {
+    const s = await track(startServer([{ status: 401, body: "denied for Bearer gw-secret-xyz" }]));
+    const client = new ZipkinClient({
+      url: s.url,
+      headers: { authorization: "Bearer gw-secret-xyz" },
+      ...fast,
+    });
     const err = await client.ping().catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(ZipkinError);
-    expect((err as ZipkinError).code).toBe("AUTHENTICATION");
-    expect((err as Error).message).not.toContain("wrong-token-xyz");
+    expect(err).toMatchObject({ code: "AUTHENTICATION", httpStatus: 401 });
+    expect((err as Error).message).not.toContain("gw-secret-xyz");
     await client.close();
   });
 
   it("serverVersion raises UnsupportedError when absent", async () => {
-    const s = await startServer([{ status: 404 }]);
-    servers.push(s);
+    const s = await track(startServer([{ status: 404, body: "404 Not Found" }]));
     const client = new ZipkinClient({ url: s.url, ...fast });
     await expect(client.serverVersion()).rejects.toMatchObject({ code: "UNSUPPORTED" });
-    const s2 = await startServer([{ status: 200, body: { other: 1 } }]);
-    servers.push(s2);
+    expect(await client.serverInfo()).toEqual({});
+    const s2 = await track(startServer([{ status: 200, body: { zipkin: { version: "" } } }]));
     const client2 = new ZipkinClient({ url: s2.url, ...fast });
     await expect(client2.serverVersion()).rejects.toMatchObject({ code: "UNSUPPORTED" });
-    await client.close();
-    await client2.close();
+    const s3 = await track(startServer([{ status: 200 }]));
+    const client3 = new ZipkinClient({ url: s3.url, ...fast });
+    expect(await client3.serverInfo()).toEqual({});
+    await Promise.all([client.close(), client2.close(), client3.close()]);
   });
 
-  it("health reports vendor words and unhealthy statuses", async () => {
-    const s = await startServer((req) =>
-      req.url === "/health"
-        ? { status: 200, body: { status: "degraded" } }
-        : { status: 200, body: "" },
+  it("health: 503 DOWN, empty body, 500 and vendor words", async () => {
+    let calls = 0;
+    const down = await track(
+      startServer(() => {
+        calls++;
+        return {
+          status: 503,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status: "DOWN" }),
+        };
+      }),
     );
-    servers.push(s);
-    const degraded = new ZipkinClient({ url: s.url, ...fast });
-    expect(await degraded.health()).toMatchObject({ healthy: false, status: "degraded" });
-    await degraded.close();
-    const empty = await startServer([{ status: 200 }]);
-    servers.push(empty);
-    const ok = new ZipkinClient({ url: empty.url, ...fast });
-    expect(await ok.health()).toMatchObject({ healthy: true, status: "ok" });
-    await ok.close();
-    const down = await startServer([{ status: 500 }]);
-    servers.push(down);
-    const sick = new ZipkinClient({ url: down.url, ...fast });
-    expect(await sick.health()).toMatchObject({ healthy: false, status: "unhealthy" });
-    await sick.close();
+    const c1 = new ZipkinClient({ url: down.url, ...fast });
+    expect(await c1.health()).toEqual({
+      healthy: false,
+      status: "DOWN",
+      details: { httpStatus: "503" },
+    });
+    expect(calls).toBe(1);
+    const empty = await track(startServer([{ status: 200 }]));
+    const c2 = new ZipkinClient({ url: empty.url, ...fast });
+    expect(await c2.health()).toMatchObject({ healthy: true, status: "UP", details: {} });
+    const sick = await track(startServer([{ status: 500 }]));
+    const c3 = new ZipkinClient({ url: sick.url, ...fast });
+    expect(await c3.health()).toMatchObject({ healthy: false, status: "unhealthy" });
+    const word = await track(startServer([{ status: 200, body: { status: "DEGRADED" } }]));
+    const c4 = new ZipkinClient({ url: word.url, ...fast });
+    expect(await c4.health()).toMatchObject({ healthy: false, status: "DEGRADED" });
+    await Promise.all([c1.close(), c2.close(), c3.close(), c4.close()]);
   });
 
   it("core.health.unreachable: closed port -> healthy=false, status=unreachable", async () => {
@@ -211,7 +249,7 @@ describe("ZipkinClient", () => {
   });
 
   it("health rethrows cancellation", async () => {
-    const s = await demoServer();
+    const s = await stockServer();
     const client = new ZipkinClient({ url: s.url });
     await expect(client.health({ signal: AbortSignal.abort() })).rejects.toMatchObject({
       code: "CANCELLED",
@@ -219,26 +257,55 @@ describe("ZipkinClient", () => {
     await client.close();
   });
 
-  it("core.close.idempotent: close twice is safe", async () => {
-    const s = await demoServer();
-    const client = new ZipkinClient({ url: s.url });
-    await client.health();
+  it("core.close.idempotent: close twice is safe and shuts tracing down", async () => {
+    const fake = await track(fakeZipkin());
+    const client = new ZipkinClient({ url: fake.url });
+    const handle = client.initTracing(
+      { serviceName: "client-close", setGlobal: false },
+      { env: false },
+    );
+    expect(handle.endpoint).toBe(`${fake.url}/api/v2/spans`);
+    handle.tracer("t").startSpan("pending-span").end();
     await client.close();
     await client.close();
+    expect(fake.spans.map((s) => s.name)).toEqual(["pending-span"]);
     await expect(client.ping()).rejects.toMatchObject({ code: "CONFIG" });
+    expect(() => client.initTracing({ serviceName: "x" })).toThrow(ConfigError);
+  });
+
+  it("initTracing: explicit endpoint wins; env protocol is honoured", async () => {
+    const client = new ZipkinClient({ url: "http://127.0.0.1:1" });
+    const explicit = client.initTracing(
+      { serviceName: "a", endpoint: "http://127.0.0.1:2/api/v2/spans", setGlobal: false },
+      { env: false },
+    );
+    expect(explicit.endpoint).toBe("http://127.0.0.1:2/api/v2/spans");
+    const otlp = client.initTracing(
+      { serviceName: "b", setGlobal: false },
+      {
+        env: {
+          GROW_ZIPKIN_PROTOCOL: "http/protobuf",
+          OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector:4318",
+        },
+      },
+    );
+    expect(otlp.endpoint).toBe("http://collector:4318/v1/traces");
+    expect(otlp.config.protocol).toBe("http/protobuf");
+    const fromProcess = client.initTracing({ serviceName: "c", setGlobal: false });
+    expect(fromProcess.endpoint).toBe("http://127.0.0.1:1/api/v2/spans");
+    await client.close();
   });
 
   it("fromEnv builds from GROW_* variables", async () => {
-    const s = await demoServer();
-    const key = `${ZipkinConfig.ENV_PREFIX}URL`;
-    process.env[key] = s.url;
+    const s = await stockServer();
+    process.env.GROW_ZIPKIN_URL = s.url;
     try {
-      const client = ZipkinClient.fromEnv({ token: "t0ken-value" });
+      const client = ZipkinClient.fromEnv({ ...fast });
       expect(client.config.url).toBe(s.url);
       expect(await client.ping()).toBeGreaterThanOrEqual(0);
       await client.close();
     } finally {
-      delete process.env[key];
+      delete process.env.GROW_ZIPKIN_URL;
     }
   });
 });
