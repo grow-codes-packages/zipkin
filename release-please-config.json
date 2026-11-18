@@ -1,0 +1,54 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": false,
+  "include-component-in-tag": true,
+  "include-v-in-tag": true,
+  "bump-minor-pre-major": true,
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "revert", "section": "Reverts" },
+    { "type": "deps", "section": "Dependencies" },
+    { "type": "docs", "section": "Documentation" },
+    { "type": "refactor", "section": "Code Refactoring", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "build", "section": "Build System", "hidden": true },
+    { "type": "ci", "section": "Continuous Integration", "hidden": true },
+    { "type": "chore", "section": "Miscellaneous", "hidden": true }
+  ],
+  "packages": {
+    "typescript": {
+      "release-type": "node",
+      "component": "typescript",
+      "package-name": "@grow-codes/zipkin",
+      "initial-version": "0.1.0"
+    },
+    "rust": {
+      "release-type": "rust",
+      "component": "rust",
+      "package-name": "grow-zipkin",
+      "initial-version": "0.1.0"
+    },
+    "go": {
+      "release-type": "go",
+      "component": "go",
+      "package-name": "github.com/grow-codes-packages/zipkin/go",
+      "tag-separator": "/",
+      "include-v-in-tag": true,
+      "initial-version": "0.1.0"
+    },
+    "python": {
+      "release-type": "python",
+      "component": "python",
+      "package-name": "grow-zipkin",
+      "initial-version": "0.1.0"
+    },
+    "java": {
+      "release-type": "maven",
+      "component": "java",
+      "package-name": "codes.grow.packages:zipkin",
+      "initial-version": "0.1.0"
+    }
+  }
+}

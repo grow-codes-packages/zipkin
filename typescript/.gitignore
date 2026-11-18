@@ -1,0 +1,10 @@
+node_modules/
+lib/
+dist/
+coverage/
+docs/api/
+*.tgz
+integration/node_modules/
+integration/package-lock.json
+/LICENSE
+/NOTICE

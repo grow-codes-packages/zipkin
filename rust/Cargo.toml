@@ -1,0 +1,75 @@
+# Created by sdk-kit 0.1.0; owned by this repository (keep the category features).
+[package]
+name = "grow-zipkin"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+# MSRV-aware dependency resolution (picks versions that still build on rust-version).
+resolver = "3"
+description = "Rust SDK for Zipkin by Grow Codes"
+authors = ["Grow Codes <opensource@grow.codes>"]
+license = "Apache-2.0"
+homepage = "https://grow-codes-packages.github.io/zipkin/"
+repository = "https://github.com/grow-codes-packages/zipkin"
+documentation = "https://docs.rs/grow-zipkin"
+readme = "README.md"
+keywords = ["grow-codes", "sdk", "client"]
+categories = ["api-bindings", "asynchronous"]
+include = ["src/**/*.rs", "Cargo.toml", "README.md", "LICENSE", "NOTICE"]
+
+[lib]
+name = "grow_zipkin"
+path = "src/lib.rs"
+
+[features]
+# Blocking wrapper (`blocking::ZipkinClient`) that owns a current-thread tokio runtime.
+blocking = []
+# In-memory fakes and the conformance runner (`testing` module).
+testing = []
+# tower `TraceLayer` (works for axum and other tower/hyper servers).
+tower = ["dep:tower", "dep:pin-project-lite"]
+# `reqwest-middleware` middleware that creates client spans and injects trace context.
+reqwest-middleware = ["dep:reqwest-middleware"]
+
+[dependencies]
+async-trait = "0.1.80"
+bytes = "1.6"
+futures = { version = "0.3.30", default-features = false, features = ["std", "async-await"] }
+httpdate = "1.0"
+rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"] }
+reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls-native-roots", "json", "gzip"] }
+serde = { version = "1.0.200", features = ["derive"] }
+serde_json = "1.0.120"
+sha2 = "0.10.8"
+tokio = { version = "1.43", features = ["rt", "time", "sync", "macros"] }
+tokio-util = { version = "0.7.11", default-features = false }
+tracing = { version = "0.1.40", default-features = false, features = ["std", "attributes"] }
+url = "2.5"
+zeroize = { version = "1.8", features = ["zeroize_derive"] }
+tracing-subscriber = { version = "0.3.18", default-features = false, features = ["std", "registry", "fmt"] }
+opentelemetry = { version = "0.31", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.31", default-features = false, features = ["trace", "rt-tokio", "experimental_trace_batch_span_processor_with_async_runtime"] }
+opentelemetry-otlp = { version = "0.31", default-features = false, features = ["trace", "http-proto", "grpc-tonic", "reqwest-client", "gzip-tonic", "gzip-http"] }
+tracing-opentelemetry = { version = "0.32", default-features = false }
+tower = { version = "0.5", optional = true, default-features = false }
+http = "1.1"
+pin-project-lite = { version = "0.2", optional = true }
+reqwest-middleware = { version = "0.4", optional = true, default-features = false }
+
+[dev-dependencies]
+tokio = { version = "1.43", features = ["rt-multi-thread", "macros", "time", "sync", "test-util"] }
+wiremock = "0.6"
+tracing-subscriber = { version = "0.3.18", default-features = false, features = ["std", "fmt", "registry"] }
+serde_json = "1.0.120"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(docsrs)', 'cfg(coverage_nightly)'] }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grow-codes-packages.github.io/sdk-kit/spec/schemas/log-record.schema.json",
+  "title": "Normalized LogRecord (wire form, SPEC §4)",
+  "type": "object",
+  "required": ["timestamp", "severity", "severityText", "body", "attributes", "resource"],
+  "additionalProperties": false,
+  "properties": {
+    "timestamp": { "type": "string", "format": "date-time", "description": "RFC 3339 UTC, up to nanosecond precision, e.g. 2026-11-18T21:00:00.123456789Z" },
+    "observedTimestamp": { "type": "string", "format": "date-time" },
+    "severity": { "type": "integer", "enum": [1, 5, 9, 13, 17, 21], "description": "OTel severity number of the Severity enum" },
+    "severityText": { "type": "string" },
+    "body": { "type": "string" },
+    "attributes": { "$ref": "#/$defs/attrMap" },
+    "resource": { "$ref": "#/$defs/attrMap" },
+    "traceId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "spanId": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+    "traceFlags": { "type": "integer", "minimum": 0, "maximum": 255 }
+  },
+  "$defs": {
+    "attrValue": {
+      "anyOf": [
+        { "type": "string" }, { "type": "number" }, { "type": "boolean" },
+        { "type": "array", "items": { "$ref": "#/$defs/attrValue" } },
+        { "$ref": "#/$defs/attrMap" }
+      ]
+    },
+    "attrMap": { "type": "object", "additionalProperties": { "$ref": "#/$defs/attrValue" } }
+  }
+}

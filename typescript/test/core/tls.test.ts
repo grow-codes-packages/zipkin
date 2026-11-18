@@ -1,0 +1,136 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:https";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  HttpTransport,
+  ZipkinError,
+  createDispatcher,
+  resolveCommonConfig,
+} from "../../src/core/index.js";
+import { captureLogger } from "../helpers/logger.js";
+
+function hasOpenssl(): boolean {
+  try {
+    execFileSync("openssl", ["version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const dir = mkdtempSync(join(tmpdir(), "sdk-tls-"));
+const enabled = hasOpenssl();
+let server: Server | undefined;
+let url = "";
+
+beforeAll(async () => {
+  if (!enabled) return;
+  execFileSync(
+    "openssl",
+    [
+      "req",
+      "-x509",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-days",
+      "1",
+      "-subj",
+      "/CN=localhost",
+      "-addext",
+      "subjectAltName=IP:127.0.0.1,DNS:localhost",
+      "-keyout",
+      join(dir, "key.pem"),
+      "-out",
+      join(dir, "cert.pem"),
+    ],
+    { stdio: "ignore" },
+  );
+  server = createServer(
+    { key: readFileSync(join(dir, "key.pem")), cert: readFileSync(join(dir, "cert.pem")) },
+    (_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end('{"tls":true}');
+    },
+  );
+  await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
+  url = `https://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+function make(
+  tls: Parameters<typeof resolveCommonConfig>[0]["tls"],
+  logger = captureLogger(),
+): HttpTransport {
+  return new HttpTransport({
+    config: resolveCommonConfig(
+      { url, tls, logger, retry: { maxRetries: 2, initialBackoffMs: 1 } },
+      url,
+    ),
+  });
+}
+
+describe.skipIf(!enabled)("TLS", () => {
+  it("rejects an unknown CA without retrying", async () => {
+    const t = make({});
+    const err = await t.get("/").catch((e: unknown) => e);
+    await t.close();
+    expect(err).toBeInstanceOf(ZipkinError);
+    expect((err as ZipkinError).code).toBe("UNAVAILABLE");
+    expect((err as ZipkinError).retryable).toBe(false);
+    expect((err as Error).message).toContain("TLS error");
+  });
+
+  it("trusts a CA from a path or PEM", async () => {
+    const byPath = make({ caCertPath: join(dir, "cert.pem") });
+    expect((await byPath.get<{ tls: boolean }>("/")).data.tls).toBe(true);
+    await byPath.close();
+    const byPem = make({ caCertPem: readFileSync(join(dir, "cert.pem"), "utf8") });
+    expect((await byPem.get<{ tls: boolean }>("/")).data.tls).toBe(true);
+    await byPem.close();
+  });
+
+  it("insecureSkipVerify works and warns", async () => {
+    const logger = captureLogger();
+    const t = make({ insecureSkipVerify: true }, logger);
+    expect((await t.get<{ tls: boolean }>("/")).data.tls).toBe(true);
+    await t.close();
+  });
+
+  it("loads client certificate files", async () => {
+    writeFileSync(join(dir, "client.pem"), readFileSync(join(dir, "cert.pem")));
+    const t = make({
+      caCertPath: join(dir, "cert.pem"),
+      clientCertPath: join(dir, "client.pem"),
+      clientKeyPath: join(dir, "key.pem"),
+    });
+    expect((await t.get<{ tls: boolean }>("/")).data.tls).toBe(true);
+    await t.close();
+  });
+});
+
+describe("createDispatcher", () => {
+  it("builds agents for direct and proxy connections", async () => {
+    const logger = captureLogger();
+    const direct = createDispatcher(
+      resolveCommonConfig({ tls: { insecureSkipVerify: true }, logger }, "http://x"),
+    );
+    const proxy = createDispatcher(
+      resolveCommonConfig({ proxy: "http://127.0.0.1:1" }, "http://x"),
+    );
+    expect(direct.constructor.name).toBe("Agent");
+    expect(proxy.constructor.name).toBe("ProxyAgent");
+    await direct.close();
+    await proxy.close();
+    const plain = createDispatcher(resolveCommonConfig({}, "http://x"));
+    await plain.close();
+  });
+});

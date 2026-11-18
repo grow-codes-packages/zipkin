@@ -1,0 +1,61 @@
+Grow Codes SDK for Zipkin (zipkin)
+Copyright 2026 Grow Codes <opensource@grow.codes>
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+Source: https://github.com/grow-codes-packages/zipkin
+Documentation: https://grow-codes-packages.github.io/zipkin/
+
+-------------------------------------------------------------------------------
+No responsibility / disclaimer
+-------------------------------------------------------------------------------
+
+This software is provided "AS IS", WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+either express or implied, including, without limitation, any warranties or
+conditions of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+PARTICULAR PURPOSE. You are solely responsible for determining whether it is
+appropriate to use this software and you assume all risks of doing so.
+
+To the maximum extent permitted by applicable law, Grow Codes is not
+responsible for any damage, data loss, security incident, outage or cost
+(including service, cloud, licence or usage charges) that results from using,
+misusing or being unable to use this software, the services it connects to, or
+any configuration, credential or data handled through it, whether in contract,
+tort or otherwise, even if Grow Codes has been advised of the possibility of
+such damage. See sections 7 and 8 of the Apache License, Version 2.0.
+
+-------------------------------------------------------------------------------
+Trademarks
+-------------------------------------------------------------------------------
+
+This project is an independent, community-maintained client library. It is not
+affiliated with, endorsed or sponsored by The OpenZipkin authors.
+Zipkin is a trademark of The OpenZipkin authors. All other product names, logos and
+brands are the property of their respective owners and are used for
+identification purposes only.
+
+The Zipkin server itself is licensed separately by its owner:
+Apache-2.0.
+This SDK contains no Zipkin server code; it talks to the service over its
+public network API.
+
+-------------------------------------------------------------------------------
+Third-party attributions
+-------------------------------------------------------------------------------
+
+The packages in this repository depend on third-party open-source libraries,
+each under its own licence (all on the allowlist in AGENTS.md: Apache-2.0, MIT,
+BSD-2-Clause, BSD-3-Clause, ISC, Zlib, Unicode-3.0, Unicode-DFS-2016, 0BSD,
+CC0-1.0, MPL-2.0). The full dependency lists and their licences are produced by
+"make license" in each language folder:
+
+  typescript/  npm dependencies        (license-checker-rseidelsohn)
+  rust/        crates.io dependencies  (cargo-deny, rust/deny.toml)
+  go/          Go modules              (go-licenses)
+  python/      PyPI dependencies       (pip-licenses)
+  java/        Maven dependencies      (license-maven-plugin)
+
+Code copied or adapted from other projects is listed below with its source,
+copyright and licence.
+
+  CODE_OF_CONDUCT.md is adapted from the Contributor Covenant, version 2.1,
+  https://www.contributor-covenant.org, licensed under CC BY 4.0.

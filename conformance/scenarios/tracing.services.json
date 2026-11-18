@@ -1,0 +1,12 @@
+{
+  "id": "tracing.services",
+  "category": "tracing",
+  "description": "the reporting service shows up in listServices after a flush",
+  "requires": ["query", "services"],
+  "steps": [
+    { "op": "span", "args": { "name": "conformance-svc-${run}" }, "save": "traceId" },
+    { "op": "flush" },
+    { "op": "getTraceUntil", "args": { "traceId": "${traceId}", "minSpans": 1, "timeoutMs": 60000 }, "expect": { "count": 1 } },
+    { "op": "listServices", "expect": { "contains": "${serviceName}" } }
+  ]
+}

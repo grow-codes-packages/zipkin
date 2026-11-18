@@ -1,0 +1,85 @@
+import { describe, expect, it } from "vitest";
+import {
+  RetryPolicy,
+  isIdempotentMethod,
+  isRetryableStatus,
+  parseRetryAfter,
+} from "../../src/core/index.js";
+
+describe("RetryPolicy", () => {
+  it("has the SPEC defaults", () => {
+    const p = new RetryPolicy();
+    expect(p.toJSON()).toEqual({
+      maxRetries: 3,
+      initialBackoffMs: 100,
+      maxBackoffMs: 10_000,
+      multiplier: 2,
+      maxRetryAfterMs: 60_000,
+    });
+    expect(p.problems()).toEqual([]);
+    expect(Object.isFrozen(p)).toBe(true);
+    expect(RetryPolicy.from(p)).toBe(p);
+    expect(RetryPolicy.from({ maxRetries: 1 }).maxRetries).toBe(1);
+    expect(RetryPolicy.from(undefined).maxRetries).toBe(3);
+  });
+
+  it("computes full-jitter backoff with an injected random source", () => {
+    const p = new RetryPolicy({ random: () => 0.5, initialBackoffMs: 100, maxBackoffMs: 1000 });
+    expect(p.backoffCapMs(0)).toBe(100);
+    expect(p.backoffCapMs(3)).toBe(800);
+    expect(p.backoffCapMs(10)).toBe(1000);
+    expect(p.backoffMs(0)).toBe(50);
+    expect(p.backoffMs(10)).toBe(500);
+    const real = new RetryPolicy();
+    for (let n = 0; n < 20; n++) {
+      const ms = real.backoffMs(n);
+      expect(ms).toBeGreaterThanOrEqual(0);
+      expect(ms).toBeLessThanOrEqual(real.backoffCapMs(n));
+    }
+  });
+
+  it("reports invalid settings", () => {
+    const p = new RetryPolicy({
+      maxRetries: -1,
+      initialBackoffMs: -1,
+      maxBackoffMs: Number.NaN,
+      multiplier: 0.5,
+      maxRetryAfterMs: -2,
+    });
+    expect(p.problems()).toHaveLength(5);
+    expect(new RetryPolicy({ maxRetries: 1.5 }).problems()).toHaveLength(1);
+  });
+});
+
+describe("Retry-After", () => {
+  it("parses seconds and HTTP dates", () => {
+    const now = Date.parse("2026-01-01T00:00:00Z");
+    expect(parseRetryAfter("1", now)).toBe(1000);
+    expect(parseRetryAfter("1.5", now)).toBe(1500);
+    expect(parseRetryAfter("Thu, 01 Jan 2026 00:00:10 GMT", now)).toBe(10_000);
+    expect(parseRetryAfter("Wed, 31 Dec 2025 23:59:00 GMT", now)).toBe(0);
+    expect(parseRetryAfter(null)).toBeUndefined();
+    expect(parseRetryAfter(undefined)).toBeUndefined();
+    expect(parseRetryAfter("  ")).toBeUndefined();
+    expect(parseRetryAfter("-1")).toBeUndefined();
+    expect(parseRetryAfter("soon")).toBeUndefined();
+    expect(parseRetryAfter("Thu, 01 Jan 2026 00:00:10 GMT")).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("retry rules", () => {
+  it("knows idempotent methods", () => {
+    for (const m of ["GET", "head", "OPTIONS", "PUT", "DELETE"])
+      expect(isIdempotentMethod(m)).toBe(true);
+    for (const m of ["POST", "PATCH"]) expect(isIdempotentMethod(m)).toBe(false);
+  });
+
+  it("retries the right statuses", () => {
+    for (const s of [408, 429, 500, 502, 503, 504])
+      expect(isRetryableStatus(s, true), String(s)).toBe(true);
+    for (const s of [400, 401, 404, 501]) expect(isRetryableStatus(s, true), String(s)).toBe(false);
+    expect(isRetryableStatus(429, false)).toBe(true);
+    for (const s of [408, 500, 502, 503, 504])
+      expect(isRetryableStatus(s, false), String(s)).toBe(false);
+  });
+});

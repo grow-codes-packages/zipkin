@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grow-codes-packages.github.io/sdk-kit/spec/schemas/trace.schema.json",
+  "title": "Normalized Trace (wire form, SPEC §5)",
+  "type": "object",
+  "required": ["traceId", "spans"],
+  "additionalProperties": false,
+  "properties": {
+    "traceId": { "$ref": "#/$defs/traceId" },
+    "spans": { "type": "array", "items": { "$ref": "#/$defs/span" }, "description": "sorted by startMicros, then spanId" }
+  },
+  "$defs": {
+    "traceId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "spanId": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+    "attrMap": { "type": "object", "additionalProperties": true },
+    "span": {
+      "type": "object",
+      "required": ["traceId", "spanId", "name", "kind", "serviceName", "startMicros", "endMicros", "durationMicros", "status", "attributes", "events", "links"],
+      "additionalProperties": false,
+      "properties": {
+        "traceId": { "$ref": "#/$defs/traceId" },
+        "spanId": { "$ref": "#/$defs/spanId" },
+        "parentSpanId": { "$ref": "#/$defs/spanId" },
+        "name": { "type": "string" },
+        "kind": { "enum": ["internal", "server", "client", "producer", "consumer", "unspecified"] },
+        "serviceName": { "type": "string" },
+        "startMicros": { "type": "integer", "minimum": 0, "description": "microseconds since the Unix epoch" },
+        "endMicros": { "type": "integer", "minimum": 0 },
+        "durationMicros": { "type": "integer", "minimum": 0 },
+        "status": {
+          "type": "object", "required": ["code"], "additionalProperties": false,
+          "properties": { "code": { "enum": ["unset", "ok", "error"] }, "message": { "type": "string" } }
+        },
+        "attributes": { "$ref": "#/$defs/attrMap" },
+        "events": { "type": "array", "items": { "type": "object", "required": ["name", "timeMicros"], "properties": {
+          "name": { "type": "string" }, "timeMicros": { "type": "integer" }, "attributes": { "$ref": "#/$defs/attrMap" } } } },
+        "links": { "type": "array", "items": { "type": "object", "required": ["traceId", "spanId"], "properties": {
+          "traceId": { "$ref": "#/$defs/traceId" }, "spanId": { "$ref": "#/$defs/spanId" }, "attributes": { "$ref": "#/$defs/attrMap" } } } }
+      }
+    },
+    "traceSummary": {
+      "type": "object", "required": ["traceId", "startMicros", "durationMicros", "spanCount"],
+      "properties": { "traceId": { "$ref": "#/$defs/traceId" }, "rootServiceName": { "type": "string" }, "rootName": { "type": "string" },
+        "startMicros": { "type": "integer" }, "durationMicros": { "type": "integer" }, "spanCount": { "type": "integer" } }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "zipkin-typescript-example",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Runnable example for @grow-codes/zipkin.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node main.ts"
+  },
+  "dependencies": {
+    "@grow-codes/zipkin": "file:../../typescript"
+  }
+}

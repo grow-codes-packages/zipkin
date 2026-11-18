@@ -1,0 +1,326 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  CancelledError,
+  type CommonConfigOptions,
+  ConfigError,
+  DEFAULT_TIMEOUTS,
+  EnvReader,
+  NotFoundError,
+  RetryPolicy,
+  TimeoutError,
+  UnavailableError,
+  definedOnly,
+  describeCommonConfig,
+  healthStatus,
+  isHealthyWord,
+  mergeOptions,
+  pollUntil,
+  probeHealth,
+  readCommonEnv,
+  resolveCommonConfig,
+  safeCall,
+  safeLogger,
+  secretValues,
+  Secret,
+  silentLogger,
+  sleep,
+  throwIfAborted,
+  validateCommonConfig,
+} from "../../src/core/index.js";
+
+describe("health helpers", () => {
+  it("builds statuses from vendor words", () => {
+    expect(isHealthyWord(" OK ")).toBe(true);
+    expect(isHealthyWord("degraded")).toBe(false);
+    expect(
+      healthStatus("up", {
+        a: 1,
+        b: true,
+        c: "x",
+        d: { e: 1 },
+        n: null,
+        u: undefined,
+        big: 1n,
+        fn: () => 1,
+      }),
+    ).toEqual({
+      healthy: true,
+      status: "up",
+      details: { a: "1", b: "true", c: "x", d: '{"e":1}', big: "1" },
+    });
+    expect(healthStatus("weird", {}, true).healthy).toBe(true);
+    expect(healthStatus("weird").healthy).toBe(false);
+  });
+
+  it("probeHealth converts failures and rethrows CANCELLED/CONFIG", async () => {
+    expect(await probeHealth(() => Promise.resolve(healthStatus("ok")))).toMatchObject({
+      healthy: true,
+    });
+    expect(await probeHealth(() => Promise.reject(new UnavailableError("x")))).toEqual({
+      healthy: false,
+      status: "unreachable",
+      details: { error: "UNAVAILABLE" },
+    });
+    expect(
+      await probeHealth(() => Promise.reject(new UnavailableError("x", { httpStatus: 503 }))),
+    ).toEqual({
+      healthy: false,
+      status: "unhealthy",
+      details: { httpStatus: "503", error: "UNAVAILABLE" },
+    });
+    expect((await probeHealth(() => Promise.reject(new Error("raw")))).status).toBe("unreachable");
+    await expect(probeHealth(() => Promise.reject(new CancelledError("c")))).rejects.toBeInstanceOf(
+      CancelledError,
+    );
+    await expect(probeHealth(() => Promise.reject(new ConfigError("c")))).rejects.toBeInstanceOf(
+      ConfigError,
+    );
+  });
+});
+
+describe("pollUntil", () => {
+  it("returns the first value that matches", async () => {
+    let n = 0;
+    const v = await pollUntil(
+      () => Promise.resolve(++n),
+      (x) => x >= 3,
+      { intervalMs: 1 },
+    );
+    expect(v).toBe(3);
+  });
+
+  it("times out with TimeoutError", async () => {
+    let now = 0;
+    const err = await pollUntil(
+      () => Promise.resolve(0),
+      () => false,
+      {
+        timeoutMs: 50,
+        intervalMs: 20,
+        operation: "waitForThing",
+        now: () => now,
+        sleep: (ms) => {
+          now += ms;
+          return Promise.resolve();
+        },
+      },
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TimeoutError);
+    expect((err as Error).message).toContain("waitForThing");
+  });
+
+  it("propagates errors unless ignored, keeping the last as cause", async () => {
+    await expect(
+      pollUntil(
+        () => Promise.reject(new NotFoundError("nf")),
+        () => true,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    const err = await pollUntil(
+      () => Promise.reject(new NotFoundError("nf")),
+      () => true,
+      { timeoutMs: 5, intervalMs: 1, ignoreError: (e) => e instanceof NotFoundError },
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TimeoutError);
+    expect((err as Error).cause).toBeInstanceOf(NotFoundError);
+  });
+
+  it("honours cancellation", async () => {
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 20);
+    await expect(
+      pollUntil(
+        () => Promise.resolve(0),
+        () => false,
+        { signal: ac.signal, intervalMs: 5 },
+      ),
+    ).rejects.toBeInstanceOf(CancelledError);
+  });
+});
+
+describe("abort helpers", () => {
+  it("sleep resolves, and rejects on abort", async () => {
+    await sleep(1);
+    await sleep(-5);
+    await expect(sleep(10, AbortSignal.abort())).rejects.toBeInstanceOf(CancelledError);
+    const ac = new AbortController();
+    const p = sleep(10_000, ac.signal, "backoff");
+    ac.abort();
+    await expect(p).rejects.toThrow("backoff: cancelled");
+    expect(() => {
+      throwIfAborted(AbortSignal.abort(), "op");
+    }).toThrow(CancelledError);
+    expect(() => {
+      throwIfAborted(undefined, "op");
+    }).not.toThrow();
+  });
+});
+
+describe("hooks helpers", () => {
+  it("safeCall swallows sync and async failures", async () => {
+    safeCall(undefined);
+    safeCall(() => {
+      throw new Error("x");
+    });
+    safeCall(() => Promise.reject(new Error("x")));
+    const fn = vi.fn();
+    safeCall(fn, 1, 2);
+    expect(fn).toHaveBeenCalledWith(1, 2);
+    await new Promise((r) => setTimeout(r, 1));
+  });
+
+  it("safeLogger wraps every level and defaults to silent", () => {
+    expect(safeLogger(undefined)).toBe(silentLogger);
+    silentLogger.debug("x");
+    silentLogger.info("x");
+    silentLogger.warn("x");
+    silentLogger.error("x");
+    const boom = (): never => {
+      throw new Error("x");
+    };
+    const l = safeLogger({ debug: boom, info: boom, warn: boom, error: boom });
+    expect(() => {
+      l.debug("a", { b: 1 });
+      l.info("a");
+      l.warn("a");
+      l.error("a");
+    }).not.toThrow();
+  });
+});
+
+describe("common config helpers", () => {
+  it("applies defaults", () => {
+    const c = resolveCommonConfig({}, "http://localhost:1");
+    expect(c.url).toBe("http://localhost:1");
+    expect(c.connectTimeoutMs).toBe(DEFAULT_TIMEOUTS.connectTimeoutMs);
+    expect(c.requestTimeoutMs).toBe(30_000);
+    expect(c.totalTimeoutMs).toBe(120_000);
+    expect(c.retry).toBeInstanceOf(RetryPolicy);
+    expect(c.proxy).toBeUndefined();
+    expect(() => validateCommonConfig(c)).not.toThrow();
+  });
+
+  it("validates every rule", () => {
+    const bad = resolveCommonConfig(
+      {
+        url: "ftp://x",
+        connectTimeoutMs: 0,
+        requestTimeoutMs: -1,
+        totalTimeoutMs: Number.NaN,
+        retry: { maxRetries: -1 },
+        tls: { clientCertPath: "/c" },
+        proxy: "socks://p",
+      },
+      "http://x",
+    );
+    let err: unknown;
+    try {
+      validateCommonConfig(bad);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(ConfigError);
+    const msg = (err as Error).message;
+    for (const part of [
+      "url",
+      "connectTimeoutMs",
+      "requestTimeoutMs",
+      "totalTimeoutMs",
+      "maxRetries",
+      "clientKeyPath",
+      "proxy",
+    ]) {
+      expect(msg).toContain(part);
+    }
+    expect(() => validateCommonConfig(resolveCommonConfig({ url: "not a url" }, "x"))).toThrow(
+      ConfigError,
+    );
+  });
+
+  it("reads common env with vendor fallbacks", () => {
+    const r = new EnvReader("GROW_T_", {
+      GROW_T_CONNECT_TIMEOUT: "1s",
+      GROW_T_REQUEST_TIMEOUT: "2s",
+      GROW_T_TOTAL_TIMEOUT: "3s",
+      GROW_T_MAX_RETRIES: "5",
+      V_ADDR: "http://v",
+      V_CA: "/ca.pem",
+      GROW_T_CLIENT_CERT: "/c.pem",
+      GROW_T_CLIENT_KEY: "/k.pem",
+      GROW_T_INSECURE_SKIP_VERIFY: "true",
+      GROW_T_PROXY: "http://proxy",
+    });
+    expect(readCommonEnv(r, { url: ["V_ADDR"], caCert: ["V_CA"] })).toEqual({
+      url: "http://v",
+      connectTimeoutMs: 1000,
+      requestTimeoutMs: 2000,
+      totalTimeoutMs: 3000,
+      retry: { maxRetries: 5 },
+      tls: {
+        caCertPath: "/ca.pem",
+        clientCertPath: "/c.pem",
+        clientKeyPath: "/k.pem",
+        insecureSkipVerify: true,
+      },
+      proxy: "http://proxy",
+    });
+    expect(readCommonEnv(new EnvReader("GROW_T_", {}))).toEqual({});
+  });
+
+  it("merges layers key by key", () => {
+    const policy = new RetryPolicy({ maxRetries: 9 });
+    expect(
+      mergeOptions<CommonConfigOptions>(
+        {
+          url: "a",
+          retry: { maxRetries: 1, initialBackoffMs: 5 },
+          tls: { caCertPath: "x" },
+          headers: { a: "1" },
+        },
+        {
+          url: undefined,
+          retry: { maxRetries: 2 },
+          tls: { insecureSkipVerify: true },
+          headers: { b: "2" },
+        },
+        undefined,
+      ),
+    ).toEqual({
+      url: "a",
+      retry: { maxRetries: 2, initialBackoffMs: 5 },
+      tls: { caCertPath: "x", insecureSkipVerify: true },
+      headers: { a: "1", b: "2" },
+    });
+    expect(
+      mergeOptions<CommonConfigOptions>({ retry: { maxRetries: 1 } }, { retry: policy }).retry,
+    ).toBe(policy);
+    expect(
+      mergeOptions<CommonConfigOptions>({ retry: policy }, { retry: { initialBackoffMs: 7 } })
+        .retry,
+    ).toMatchObject({ maxRetries: 9, initialBackoffMs: 7 });
+    expect(definedOnly({ a: 1, b: undefined })).toEqual({ a: 1 });
+  });
+
+  it("describes config without credentials", () => {
+    const c = resolveCommonConfig(
+      {
+        url: "https://u:pw@h",
+        headers: { "x-token": "t" },
+        tls: { caCertPem: "PEM" },
+        proxy: "http://u:p@proxy",
+        userAgentSuffix: "s",
+      },
+      "x",
+    );
+    const d = JSON.stringify(describeCommonConfig(c));
+    expect(d).not.toContain("pw");
+    expect(d).not.toContain('"t"');
+    expect(d).not.toContain("PEM");
+    expect(d).not.toContain(":p@");
+    expect(d).toContain('"userAgentSuffix":"s"');
+    expect(JSON.stringify(describeCommonConfig(resolveCommonConfig({}, "http://x")))).not.toContain(
+      "proxy",
+    );
+    expect(secretValues(new Secret("a"), "b", undefined)).toEqual(["a"]);
+  });
+});

@@ -1,0 +1,2 @@
+# Test-only dependencies of the consumer project (the SDK itself is installed from the wheel).
+pytest>=8.3

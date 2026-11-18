@@ -1,0 +1,312 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { NotFoundError } from "../../src/core/index.js";
+import {
+  type ConformanceOptions,
+  type Scenario,
+  assertConformance,
+  builtinOps,
+  conformanceCases,
+  formatReport,
+  loadScenarios,
+  planScenarios,
+  randomRunId,
+  registerOps,
+  resetRegisteredOps,
+  resolveOps,
+  runConformance,
+  runScenario,
+  substitute,
+} from "../../src/testing/index.js";
+
+const dir = mkdtempSync(join(tmpdir(), "sdk-scenarios-"));
+afterAll(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
+afterEach(() => {
+  resetRegisteredOps();
+});
+
+function write(scenarios: Scenario[]): string {
+  const d = mkdtempSync(join(dir, "s-"));
+  for (const s of scenarios) writeFileSync(join(d, `${s.id}.json`), JSON.stringify(s));
+  writeFileSync(join(d, "README.txt"), "ignored");
+  return d;
+}
+
+interface Counter {
+  n: number;
+  closed: number;
+}
+
+function base(scenarios: Scenario[], extra: Partial<ConformanceOptions> = {}): ConformanceOptions {
+  return {
+    scenariosDir: write(scenarios),
+    factories: { core: () => ({ n: 0, closed: 0, close: () => Promise.resolve() }) },
+    ops: {
+      core: {
+        ops: {
+          inc: (t: Counter, a) => (t.n += Number(a.by ?? 1)),
+          echo: (_t: Counter, a) => a.value,
+          fail: () => {
+            throw new NotFoundError("nope");
+          },
+          failPlain: () => {
+            throw "plain";
+          },
+        },
+      },
+    },
+    ...extra,
+  };
+}
+
+describe("runner", () => {
+  it("substitutes variables, saves results and evaluates expectations", async () => {
+    const s: Scenario = {
+      id: "t.vars",
+      category: "core",
+      steps: [
+        { op: "echo", args: { value: "x-${run}" }, save: "first" },
+        { op: "echo", args: { value: "${first}" }, expect: { equals: "x-abcdefgh" } },
+        {
+          op: "echo",
+          args: { value: { nested: ["${prefix}"] } },
+          expect: { equals: { nested: ["p/abcdefgh/"] } },
+        },
+        { op: "inc", args: { by: 2 }, save: "count" },
+        { op: "echo", args: { value: "${count}" }, expect: { equals: 2, type: "number" } },
+        { op: "echo", args: { value: "n=${count}" }, expect: { equals: "n=2" } },
+        { op: "fail", expect: { error: "NOT_FOUND" } },
+        { op: "echo", args: { value: "${custom}" }, expect: { equals: "c" } },
+      ],
+    };
+    const report = await runConformance(
+      base([s], { runId: () => "abcdefgh", prefix: "p/${run}/", variables: { custom: "c" } }),
+    );
+    expect(report.ok, formatReport(report)).toBe(true);
+    expect(report.results[0]?.steps).toHaveLength(8);
+    expect(() => {
+      assertConformance(report);
+    }).not.toThrow();
+  });
+
+  it("reports failures with the failing step", async () => {
+    const scenarios: Scenario[] = [
+      {
+        id: "f.expect",
+        category: "core",
+        steps: [{ op: "echo", args: { value: 1 }, expect: { equals: 2 } }],
+      },
+      {
+        id: "f.error-missing",
+        category: "core",
+        steps: [{ op: "echo", expect: { error: "NOT_FOUND" } }],
+      },
+      {
+        id: "f.error-wrong",
+        category: "core",
+        steps: [{ op: "fail", expect: { error: "CONFIG" } }],
+      },
+      {
+        id: "f.error-plain",
+        category: "core",
+        steps: [{ op: "failPlain", expect: { error: "CONFIG" } }],
+      },
+      { id: "f.unexpected", category: "core", steps: [{ op: "fail" }, { op: "echo" }] },
+      { id: "f.unknown-op", category: "core", steps: [{ op: "nope" }] },
+      {
+        id: "f.unknown-var",
+        category: "core",
+        steps: [{ op: "echo", args: { value: "${missing}" } }],
+      },
+      { id: "f.plain-throw", category: "core", steps: [{ op: "failPlain" }] },
+    ];
+    const report = await runConformance(base(scenarios));
+    expect(report.ok).toBe(false);
+    expect(report.failed).toBe(8);
+    const byId = Object.fromEntries(report.results.map((r) => [r.id, r]));
+    expect(byId["f.expect"]?.error).toContain("equals");
+    expect(byId["f.error-missing"]?.error).toContain("but the op succeeded");
+    expect(byId["f.error-wrong"]?.error).toContain("NOT_FOUND: nope");
+    expect(byId["f.error-plain"]?.error).toContain("got plain");
+    expect(byId["f.unexpected"]?.steps).toHaveLength(1);
+    expect(byId["f.unknown-op"]?.error).toContain('unknown op "nope"');
+    expect(byId["f.unknown-var"]?.error).toContain("unknown variable ${missing}");
+    expect(byId["f.plain-throw"]?.error).toContain("plain");
+    expect(formatReport(report)).toContain("FAILED  f.expect");
+    expect(() => {
+      assertConformance(report);
+    }).toThrow("conformance failed");
+  });
+
+  it("skips scenarios and steps whose requirements are not declared", async () => {
+    const scenarios: Scenario[] = [
+      { id: "s.scenario", category: "core", requires: ["write"], steps: [{ op: "echo" }] },
+      {
+        id: "s.step",
+        category: "core",
+        steps: [{ op: "echo", requires: ["versions"] }, { op: "echo" }],
+      },
+    ];
+    const report = await runConformance(base(scenarios));
+    expect(report.skipped).toBe(1);
+    expect(report.passed).toBe(1);
+    const text = formatReport(report);
+    expect(text).toContain("SKIPPED s.scenario — missing capabilities: write");
+    expect(text).toContain("(skipped steps: echo#0)");
+    const declared = await runConformance(base(scenarios, { capabilities: ["write", "versions"] }));
+    expect(declared.passed).toBe(2);
+    const perCategory = await runConformance(
+      base(scenarios, { capabilities: { core: ["write"] } }),
+    );
+    expect(perCategory.passed).toBe(2);
+    const otherCategory = await runConformance(
+      base(scenarios, { capabilities: { secrets: ["write"] } }),
+    );
+    expect(otherCategory.skipped).toBe(1);
+    const cases = conformanceCases(base(scenarios));
+    expect(cases.find((c) => c.id === "s.scenario")?.skip).toContain("write");
+    const direct = await runScenario(scenarios[0] as Scenario, base(scenarios));
+    expect(direct.status).toBe("skipped");
+  });
+
+  it("filters by category and id, and requires factories", async () => {
+    const scenarios: Scenario[] = [
+      { id: "a", category: "core", steps: [] },
+      { id: "b", category: "core", steps: [] },
+      { id: "c", category: "secrets", steps: [] },
+    ];
+    expect(planScenarios(base(scenarios, { only: ["b"] })).map((p) => p.scenario.id)).toEqual([
+      "b",
+    ]);
+    expect(planScenarios(base(scenarios)).map((p) => p.scenario.id)).toEqual(["a", "b"]);
+    expect(() => planScenarios(base(scenarios, { categories: ["secrets"] }))).toThrow(
+      'no factory for category "secrets"',
+    );
+  });
+
+  it("fails scenarios when setup, handlers or dispose fail; cleanups always run", async () => {
+    const cleaned: string[] = [];
+    const scenarios: Scenario[] = [{ id: "x", category: "core", steps: [{ op: "clean" }] }];
+    const opts = (factory: () => unknown, dispose?: () => unknown): ConformanceOptions => ({
+      scenariosDir: write(scenarios),
+      factories: { core: factory },
+      ops: {
+        core: {
+          ops: {
+            clean: (_t, _a, ctx) => {
+              expect(ctx.step.op).toBe("clean");
+              expect(ctx.capabilities.size).toBe(0);
+              expect(ctx.substitute("${run}")).toBe(ctx.run);
+              ctx.onCleanup(() => cleaned.push("a"));
+              ctx.onCleanup(() => {
+                throw new Error("ignored");
+              });
+            },
+          },
+          ...(dispose === undefined ? {} : { dispose }),
+        },
+      },
+    });
+    const setup = await runConformance(opts(() => Promise.reject(new Error("no server"))));
+    expect(setup.results[0]?.error).toBe("setup: no server");
+    const disposeFail = await runConformance(
+      opts(
+        () => ({}),
+        () => {
+          throw new Error("close failed");
+        },
+      ),
+    );
+    expect(disposeFail.results[0]?.error).toBe("dispose: close failed");
+    expect(cleaned).toEqual(["a"]);
+  });
+
+  it("supports registerOps, variables from targets and built-in core dispose", async () => {
+    registerOps<Counter>("core", { more: (t) => ++t.n });
+    registerOps<Counter>("core", {
+      ops: { echo: (_t, a) => a.value },
+      variables: () => ({ serviceName: "svc" }),
+    });
+    registerOps("custom", { ping: () => "pong" });
+    const scenarios: Scenario[] = [
+      {
+        id: "r",
+        category: "core",
+        steps: [
+          { op: "more", expect: { equals: 1 } },
+          { op: "echo", args: { value: "${serviceName}" }, expect: { equals: "svc" } },
+        ],
+      },
+    ];
+    const report = await runConformance({
+      scenariosDir: write(scenarios),
+      factories: { core: () => ({ n: 0, closed: 0, close: () => Promise.resolve() }) },
+    });
+    expect(report.ok, formatReport(report)).toBe(true);
+    expect(resolveOps("custom")?.ops.ping).toBeDefined();
+    expect(resolveOps("unknown")).toBeUndefined();
+    expect(resolveOps("unknown", { unknown: { x: () => 1 } })?.ops.x).toBeDefined();
+    expect(builtinOps.core).toBeDefined();
+    const missingOps = await runScenario(
+      { id: "u", category: "secrets" as never, steps: [] },
+      {
+        scenariosDir: dir,
+        factories: {},
+        ops: {},
+      },
+    );
+    expect(missingOps.status).toBe("failed");
+    resetRegisteredOps();
+    const unregistered = await runScenario(
+      { id: "z", category: "nothing" as never, steps: [] },
+      { scenariosDir: dir, factories: {} },
+    );
+    expect(unregistered.error).toContain("no op handlers");
+  });
+
+  it("runs conformance cases and throws on failure", async () => {
+    const scenarios: Scenario[] = [
+      {
+        id: "ok",
+        category: "core",
+        steps: [{ op: "echo", args: { value: 1 }, expect: { equals: 1 } }],
+      },
+      {
+        id: "bad",
+        category: "core",
+        steps: [{ op: "echo", args: { value: 1 }, expect: { equals: 2 } }],
+      },
+    ];
+    const cases = conformanceCases(base(scenarios));
+    expect(cases.map((c) => c.id)).toEqual(["bad", "ok"]);
+    await expect(cases[0]?.run()).rejects.toThrow("bad: step 0");
+    await expect(cases[1]?.run()).resolves.toMatchObject({ status: "passed" });
+  });
+
+  it("loads scenarios and rejects invalid files", () => {
+    const d = write([
+      { id: "b", category: "core", steps: [] },
+      { id: "a", category: "core", steps: [] },
+    ]);
+    expect(loadScenarios(d).map((s) => s.id)).toEqual(["a", "b"]);
+    writeFileSync(join(d, "bad.json"), JSON.stringify({ id: 1 }));
+    expect(() => loadScenarios(d)).toThrow("invalid scenario file bad.json");
+  });
+
+  it("generates run ids and substitutes recursively", () => {
+    expect(randomRunId()).toMatch(/^[a-z0-9]{8}$/);
+    expect(substitute({ a: ["${x}", 1, null], b: "${y}-${x}" }, { x: "1", y: { z: 2 } })).toEqual({
+      a: ["1", 1, null],
+      b: "[object Object]-1",
+    });
+    expect(substitute("${y}", { y: { z: 2 } })).toEqual({ z: 2 });
+    expect(substitute({ "root-${x}": ["child-${x}"], plain: 1 }, { x: "1" })).toEqual({
+      "root-1": ["child-1"],
+      plain: 1,
+    });
+  });
+});

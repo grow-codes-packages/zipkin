@@ -1,0 +1,100 @@
+import { describe, expect, it } from "vitest";
+import {
+  AuthenticationError,
+  CancelledError,
+  ConfigError,
+  ConflictError,
+  ErrorCode,
+  NotFoundError,
+  PermissionDeniedError,
+  RateLimitError,
+  TimeoutError,
+  UnavailableError,
+  UnsupportedError,
+  ValidationError,
+  ZipkinError,
+  codeForStatus,
+  errorForCode,
+  errorForStatus,
+  isZipkinError,
+  reasonForCode,
+} from "../../src/core/index.js";
+
+describe("errors", () => {
+  it("subclasses carry the canonical code and default retryability", () => {
+    const cases: [ZipkinError, string, boolean][] = [
+      [new ConfigError("m"), "CONFIG", false],
+      [new AuthenticationError("m"), "AUTHENTICATION", false],
+      [new PermissionDeniedError("m"), "PERMISSION_DENIED", false],
+      [new NotFoundError("m"), "NOT_FOUND", false],
+      [new ConflictError("m"), "CONFLICT", false],
+      [new RateLimitError("m"), "RATE_LIMITED", true],
+      [new ValidationError("m"), "VALIDATION", false],
+      [new UnavailableError("m"), "UNAVAILABLE", true],
+      [new TimeoutError("m"), "TIMEOUT", true],
+      [new UnsupportedError("m"), "UNSUPPORTED", false],
+      [new CancelledError("m"), "CANCELLED", false],
+    ];
+    for (const [err, code, retryable] of cases) {
+      expect(err).toBeInstanceOf(ZipkinError);
+      expect(err).toBeInstanceOf(Error);
+      expect(err.code).toBe(code);
+      expect(err.retryable).toBe(retryable);
+      expect(err.name).toBe(err.constructor.name);
+      expect(errorForCode(err.code, "x")).toBeInstanceOf(err.constructor);
+      expect(reasonForCode(err.code)).not.toBe("");
+    }
+    expect(Object.values(ErrorCode)).toHaveLength(11);
+  });
+
+  it("keeps details and serialises without the cause", () => {
+    const cause = new Error("inner");
+    const err = new RateLimitError("slow down", {
+      httpStatus: 429,
+      requestId: "r1",
+      retryAfterMs: 5,
+      cause,
+      retryable: false,
+    });
+    expect(err.httpStatus).toBe(429);
+    expect(err.requestId).toBe("r1");
+    expect(err.retryAfterMs).toBe(5);
+    expect(err.retryable).toBe(false);
+    expect(err.cause).toBe(cause);
+    expect(err.toJSON()).toEqual({
+      name: "RateLimitError",
+      code: "RATE_LIMITED",
+      message: "slow down",
+      retryable: false,
+      httpStatus: 429,
+      requestId: "r1",
+      retryAfterMs: 5,
+    });
+    expect(new NotFoundError("x").toJSON()).toEqual({
+      name: "NotFoundError",
+      code: "NOT_FOUND",
+      message: "x",
+      retryable: false,
+    });
+  });
+
+  it("maps statuses and builds messages", () => {
+    expect(codeForStatus(418)).toBe("VALIDATION");
+    expect(codeForStatus(599)).toBe("UNAVAILABLE");
+    const err = errorForStatus("kv.read secret/app", 404);
+    expect(err.message).toBe("kv.read secret/app: not found (HTTP 404)");
+    expect(err.httpStatus).toBe(404);
+    expect(errorForStatus("op", 400, { reason: "" }).message).toBe(
+      "op: invalid request (HTTP 400)",
+    );
+    expect(errorForStatus("op", 400, { reason: "bad", requestId: "q" }).requestId).toBe("q");
+  });
+
+  it("isZipkinError narrows by code", () => {
+    const err = new NotFoundError("x");
+    expect(isZipkinError(err)).toBe(true);
+    expect(isZipkinError(err, "NOT_FOUND")).toBe(true);
+    expect(isZipkinError(err, "CONFIG")).toBe(false);
+    expect(isZipkinError(new Error("x"))).toBe(false);
+  });
+});

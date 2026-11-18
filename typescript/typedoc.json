@@ -1,0 +1,11 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "@grow-codes/zipkin",
+  "entryPoints": ["src/index.ts", "src/testing/index.ts"],
+  "out": "docs/api",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "readme": "README.md",
+  "includeVersion": true,
+  "treatWarningsAsErrors": false
+}

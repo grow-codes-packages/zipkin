@@ -1,0 +1,49 @@
+# Zipkin fixture for grow-codes-packages/zipkin (GRO-1380), per sdk-kit SPEC §8.
+# Real service: openzipkin/zipkin:3.6.1 (stack catalog tag) with in-memory storage, same env as
+# the Grow stack template (agent-core gro1285-observability-templates.ts). No database, no auth.
+# The template adds test-<lang> services; they need only
+#   GROW_ZIPKIN_URL=http://zipkin:9411   and   /bootstrap/env  (read-only mount of volume `bootstrap`).
+# No host ports are published.
+services:
+  service:   # service under test (harness contract); reachable as `zipkin`
+    networks:
+      default:
+        aliases: [zipkin]
+    image: openzipkin/zipkin:3.6.1
+    environment:
+      STORAGE_TYPE: mem
+      MEM_MAX_SPANS: "500000"
+      JAVA_OPTS: "-Xms256m -Xmx512m -XX:+ExitOnOutOfMemoryError"
+      # Test-only addition to the stack env: tag keys indexed for /api/v2/autocompleteValues.
+      # Without it autocompleteKeys() returns [] and autocompleteValues() always [].
+      AUTOCOMPLETE_KEYS: "grow.test,http.method"
+      # Accept proto3 / JSON over gRPC too (zipkin.proto3.SpanService/Report on 9411). Off in the
+      # stack template; enabled here so the optional gRPC path can be exercised. HTTP is unaffected.
+      COLLECTOR_GRPC_ENABLED: "true"
+    healthcheck:
+      # Image ships `docker-healthcheck` (GET /health, expects status UP).
+      test: ["CMD", "docker-healthcheck"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    restart: "no"
+
+  bootstrap:
+    image: curlimages/curl:8.23.0
+    entrypoint: ["/bin/sh", "/bootstrap-scripts/bootstrap.sh"]
+    user: "0:0"   # image default user is curl_user; root so it can write the fresh named volume
+    environment:
+      ZIPKIN_URL: http://zipkin:9411
+      EXPECTED_ZIPKIN_VERSION: "3.6.1"
+      AUTOCOMPLETE_KEYS: "grow.test,http.method"
+    volumes:
+      - ./bootstrap:/bootstrap-scripts:ro
+      - bootstrap:/bootstrap
+    depends_on:
+      service:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  bootstrap:

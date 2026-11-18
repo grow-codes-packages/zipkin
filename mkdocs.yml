@@ -1,0 +1,129 @@
+# Documentation site of the Grow Codes SDK for Zipkin (MkDocs Material).
+# Generated once by sdk-kit 0.1.0; owned by this repo (add service pages under
+# "Functions"). The Grow Codes theme lives in docs/.overrides (synced by sdk-kit).
+# Build: pip install -r docs/requirements.txt && mkdocs build --strict   (or: make docs-site)
+site_name: Zipkin SDK
+site_description: >-
+  Grow Codes SDK for Zipkin in TypeScript, Rust, Go, Python and Java — one API, five languages.
+site_author: Grow Codes
+site_url: https://grow-codes-packages.github.io/zipkin/
+repo_url: https://github.com/grow-codes-packages/zipkin
+repo_name: grow-codes-packages/zipkin
+edit_uri: edit/main/docs/
+copyright: >-
+  Copyright &copy; Grow Codes · Apache-2.0 ·
+  Zipkin is a trademark of The OpenZipkin authors; this project is not affiliated with or endorsed by it.
+
+exclude_docs: |
+  requirements.txt
+
+theme:
+  name: material
+  custom_dir: docs/.overrides
+  language: en
+  icon:
+    logo: grow/logo
+    repo: fontawesome/brands/github
+  favicon: assets/favicon.svg
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  features:
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.highlight
+    - search.suggest
+    - toc.follow
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [python/src]
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            show_if_no_docstring: false
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            filters: ["!^_"]
+            heading_level: 3
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra:
+  generator: true
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/grow-codes-packages/zipkin
+      name: Source on GitHub
+    - icon: fontawesome/solid/seedling
+      link: https://grow.codes
+      name: Grow Codes
+
+nav:
+  - Overview: index.md
+  - Install: install.md
+  - Quickstart: quickstart.md
+  - Configuration: configuration.md
+  - Client: client.md
+  - Functions: functions.md
+  - Tracing: tracing.md
+  - Error handling: errors.md
+  - Hooks and logger: hooks.md
+  - Redaction: redaction.md
+  - Docker testing: docker-testing.md
+  - Compatibility: compatibility.md
+  - API reference: api.md
+  - Troubleshooting: troubleshooting.md
+  - License & disclaimer: license.md

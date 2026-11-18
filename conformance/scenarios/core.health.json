@@ -1,0 +1,13 @@
+{
+  "id": "core.health",
+  "category": "core",
+  "description": "health, ping and serverVersion answer; close is idempotent",
+  "requires": [],
+  "steps": [
+    { "op": "health", "expect": { "equals": { "healthy": true } } },
+    { "op": "ping", "expect": { "type": "number" } },
+    { "op": "serverVersion", "requires": ["version"], "expect": { "type": "string" } },
+    { "op": "close" },
+    { "op": "close" }
+  ]
+}

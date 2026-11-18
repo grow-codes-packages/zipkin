@@ -1,0 +1,16 @@
+{
+  "id": "tracing.tree",
+  "category": "tracing",
+  "description": "nested spans with attributes and an event come back from the query API with the same tree",
+  "requires": ["query"],
+  "steps": [
+    { "op": "span", "args": { "name": "conformance-root-${run}", "attributes": { "run": "${run}" }, "kind": "server",
+      "children": [
+        { "name": "child-a", "attributes": { "n": 1 }, "events": ["checkpoint"] },
+        { "name": "child-b", "attributes": { "n": 2 }, "error": "boom", "children": [ { "name": "grandchild" } ] }
+      ] }, "save": "traceId" },
+    { "op": "flush" },
+    { "op": "getTraceUntil", "args": { "traceId": "${traceId}", "minSpans": 4, "timeoutMs": 60000 },
+      "expect": { "count": 4, "tree": { "conformance-root-${run}": ["child-a", "child-b"], "child-b": ["grandchild"] } } }
+  ]
+}

@@ -1,0 +1,152 @@
+import { inspect } from "node:util";
+import { describe, expect, it } from "vitest";
+import {
+  REDACTED,
+  Secret,
+  isSensitiveField,
+  isSensitiveHeader,
+  redactError,
+  redactFields,
+  redactHeaders,
+  redactText,
+  redactUrl,
+} from "../../src/core/index.js";
+
+describe("redaction", () => {
+  it("detects sensitive headers", () => {
+    for (const h of [
+      "Authorization",
+      "proxy-authorization",
+      "Cookie",
+      "set-cookie",
+      "X-Vault-Token",
+      "X-API-Key",
+      "apikey",
+      "X-Amz-Security-Token",
+      "x-session-id",
+      "X-Signature",
+      "x-credential",
+      "x-auth-user",
+      "dd-api-key",
+      "x-secret",
+    ]) {
+      expect(isSensitiveHeader(h), h).toBe(true);
+    }
+    for (const h of ["content-type", "accept", "user-agent", "x-request-id"])
+      expect(isSensitiveHeader(h), h).toBe(false);
+  });
+
+  it("redacts header maps and iterables", () => {
+    expect(
+      redactHeaders({
+        Authorization: "Bearer x",
+        accept: "json",
+        multi: ["a", "b"],
+        skip: undefined,
+      }),
+    ).toEqual({
+      Authorization: REDACTED,
+      accept: "json",
+      multi: "a, b",
+    });
+    expect(redactHeaders(new Headers({ cookie: "c", "x-ok": "1" }))).toEqual({
+      cookie: REDACTED,
+      "x-ok": "1",
+    });
+  });
+
+  it("detects sensitive fields with extra keys", () => {
+    expect(isSensitiveField("db_password")).toBe(true);
+    expect(isSensitiveField("client_secret")).toBe(true);
+    expect(isSensitiveField("name")).toBe(false);
+    expect(isSensitiveField("pin", ["PIN"])).toBe(true);
+    expect(isSensitiveField("pin", [""])).toBe(false);
+  });
+
+  it("redacts URLs: query values and user info", () => {
+    expect(redactUrl("https://h/p?token=abc&x=1")).toBe("https://h/p?token=[REDACTED]&x=1");
+    expect(redactUrl(new URL("https://u:pw@h/p"))).toBe("https://u:[REDACTED]@h/p");
+    expect(redactUrl("https://tok@h/")).toBe("https://[REDACTED]@h/");
+    expect(redactUrl("https://h/p?x=1")).toBe("https://h/p?x=1");
+    expect(redactUrl("/rel?api_key=k&y=2")).toBe("/rel?api_key=[REDACTED]&y=2");
+  });
+
+  it("redacts fields recursively, including maps, arrays and cycles", () => {
+    const cyclic: Record<string, unknown> = { password: "p" };
+    cyclic.self = cyclic;
+    const input = {
+      user: "u",
+      password: "p",
+      nested: {
+        apiKey: "k",
+        list: [{ token: "t", keep: 1 }],
+        when: new Date(0),
+        raw: new Uint8Array([1]),
+      },
+      map: new Map<unknown, unknown>([
+        ["secret", "s"],
+        ["ok", { session: "z" }],
+        [1, "n"],
+      ]),
+      cyclic,
+      n: null,
+    };
+    const out = redactFields(input, ["user"]);
+    expect(out.user).toBe(REDACTED);
+    expect(out.password).toBe(REDACTED);
+    expect(out.nested.apiKey).toBe(REDACTED);
+    expect(out.nested.list[0]).toEqual({ token: REDACTED, keep: 1 });
+    expect(out.nested.when).toBeInstanceOf(Date);
+    expect(out.map.get("secret")).toBe(REDACTED);
+    expect(out.map.get("ok")).toEqual({ session: REDACTED });
+    expect(out.map.get(1)).toBe("n");
+    expect((out.cyclic as Record<string, unknown>).self).toBe(out.cyclic);
+    expect(input.password).toBe("p");
+    expect(redactFields("plain")).toBe("plain");
+  });
+
+  it("redacts known secret values of length >= 4, longest first", () => {
+    expect(
+      redactText("a abcd abcdef xyz wxyz", [
+        "abcd",
+        "abcdef",
+        "xyz",
+        null,
+        undefined,
+        new Secret("wxyz"),
+      ]),
+    ).toBe("a [REDACTED] [REDACTED] xyz [REDACTED]");
+    expect(redactText("abcdef", ["abcd", "abcdef"])).toBe("[REDACTED]");
+    expect(redactText("nothing")).toBe("nothing");
+  });
+
+  it("Secret never prints its value", () => {
+    const s = new Secret("hunter22");
+    expect(s.reveal()).toBe("hunter22");
+    expect(String(s)).toBe(REDACTED);
+    expect(`${s}`).toBe(REDACTED);
+    expect(JSON.stringify({ s })).toBe(`{"s":"${REDACTED}"}`);
+    expect(inspect({ s })).not.toContain("hunter22");
+    expect(s.equals("hunter22")).toBe(true);
+    expect(s.equals(new Secret("hunter23"))).toBe(false);
+    expect(s.equals("short")).toBe(false);
+    expect(Secret.from(undefined)).toBeUndefined();
+    expect(Secret.from(null)).toBeUndefined();
+    expect(Secret.from("")).toBeUndefined();
+    expect(Secret.from(s)).toBe(s);
+    expect(Secret.from("v")?.reveal()).toBe("v");
+  });
+
+  it("redactError copies name, code and cause with redacted messages", () => {
+    const inner = Object.assign(new Error("connect to https://h/?token=abc failed"), {
+      code: "ECONNREFUSED",
+    });
+    const outer = new Error("fetch failed with s3cret!", { cause: inner });
+    const copy = redactError(outer, ["s3cret!"]);
+    expect(copy.message).toBe("fetch failed with [REDACTED]");
+    const cause = copy.cause as Error & { code?: string };
+    expect(cause.message).toBe("connect to https://h/?token=[REDACTED] failed");
+    expect(cause.code).toBe("ECONNREFUSED");
+    expect(redactError("raw s3cret!", ["s3cret!"]).message).toBe("raw [REDACTED]");
+  });
+});

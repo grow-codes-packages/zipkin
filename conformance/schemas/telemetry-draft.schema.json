@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Normalized SDK telemetry",
+  "oneOf": [
+    { "$ref": "#/$defs/LogRecord" },
+    { "$ref": "#/$defs/Trace" },
+    { "$ref": "#/$defs/Span" }
+  ],
+  "$defs": {
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "TraceId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "not": { "const": "00000000000000000000000000000000" }
+    },
+    "SpanId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "not": { "const": "0000000000000000" }
+    },
+    "LogRecord": {
+      "type": "object",
+      "required": ["timestamp", "severityText", "severityNumber", "body", "attributes", "resource"],
+      "additionalProperties": false,
+      "dependentRequired": { "spanId": ["traceId"], "traceFlags": ["traceId"] },
+      "properties": {
+        "timestamp": { "$ref": "#/$defs/Timestamp" },
+        "severityText": { "type": "string" },
+        "severityNumber": { "type": "integer", "minimum": 0, "maximum": 24 },
+        "body": {},
+        "attributes": { "type": "object" },
+        "resource": { "type": "object" },
+        "traceId": { "$ref": "#/$defs/TraceId" },
+        "spanId": { "$ref": "#/$defs/SpanId" },
+        "traceFlags": { "type": "integer", "minimum": 0, "maximum": 255 }
+      }
+    },
+    "Trace": {
+      "type": "object",
+      "required": ["traceId", "spans"],
+      "additionalProperties": false,
+      "properties": {
+        "traceId": { "$ref": "#/$defs/TraceId" },
+        "spans": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/Span" } }
+      }
+    },
+    "Span": {
+      "type": "object",
+      "required": ["traceId", "spanId", "name", "kind", "serviceName", "start", "end", "durationMicros", "status", "attributes", "events", "links"],
+      "additionalProperties": false,
+      "properties": {
+        "traceId": { "$ref": "#/$defs/TraceId" },
+        "spanId": { "$ref": "#/$defs/SpanId" },
+        "parentSpanId": { "$ref": "#/$defs/SpanId" },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["unspecified", "internal", "server", "client", "producer", "consumer"] },
+        "serviceName": { "type": "string", "minLength": 1 },
+        "start": { "$ref": "#/$defs/Timestamp" },
+        "end": { "$ref": "#/$defs/Timestamp" },
+        "durationMicros": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "status": { "enum": ["unset", "ok", "error"] },
+        "attributes": { "type": "object" },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/Event" } },
+        "links": { "type": "array", "items": { "$ref": "#/$defs/Link" } }
+      }
+    },
+    "Event": {
+      "type": "object",
+      "required": ["name", "timestamp", "attributes"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "timestamp": { "$ref": "#/$defs/Timestamp" },
+        "attributes": { "type": "object" }
+      }
+    },
+    "Link": {
+      "type": "object",
+      "required": ["traceId", "spanId", "attributes"],
+      "additionalProperties": false,
+      "properties": {
+        "traceId": { "$ref": "#/$defs/TraceId" },
+        "spanId": { "$ref": "#/$defs/SpanId" },
+        "attributes": { "type": "object" }
+      }
+    }
+  }
+}
