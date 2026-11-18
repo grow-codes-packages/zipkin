@@ -30,7 +30,7 @@ x-test: &test
   volumes:
     - bootstrap:/bootstrap:ro
   environment:
-    GROW_ZIPKIN_URL: ${GROW_ZIPKIN_URL:-http://service:9411}
+    GROW_ZIPKIN_URL: ${GROW_ZIPKIN_URL:-http://zipkin:9411}
     GROW_BOOTSTRAP_ENV: /bootstrap/env
     GROW_TEST_RUN_ID: ${GROW_TEST_RUN_ID:-local}
   init: true
