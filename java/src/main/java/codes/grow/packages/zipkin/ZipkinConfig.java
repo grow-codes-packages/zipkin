@@ -6,13 +6,13 @@ import codes.grow.packages.zipkin.core.Hooks;
 import codes.grow.packages.zipkin.core.Logger;
 import codes.grow.packages.zipkin.core.Redaction;
 import codes.grow.packages.zipkin.core.RetryPolicy;
-import codes.grow.packages.zipkin.core.Secret;
 import codes.grow.packages.zipkin.core.TlsOptions;
 import codes.grow.packages.zipkin.core.TransportConfig;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -20,30 +20,50 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Immutable configuration of a {@link ZipkinClient} (SPEC section 2.2).
+ * Immutable configuration of a {@link ZipkinClient} (SPEC section 2.2): the Zipkin server URL (port
+ * 9411), the span ingest endpoint and the common transport settings.
  *
  * <p>Build one with {@link #builder()} or read it from the environment with {@link #fromEnv()}.
- * Precedence: explicit builder value &gt; SDK variable ({@link EnvReader#DEFAULT_PREFIX} + name)
- * &gt; vendor variables &gt; default. {@link #toString()} never prints credentials.
+ * Precedence: explicit builder value &gt; SDK variable ({@code GROW_ZIPKIN_*}) &gt; vendor
+ * variables &gt; default:
  *
- * <p>This file is owned by the service package (generated once by sdk-kit); add service fields
- * here.
+ * <ul>
+ *   <li>{@code url}: {@code GROW_ZIPKIN_URL} &gt; {@code ZIPKIN_URL} &gt; {@code
+ *       OTEL_EXPORTER_ZIPKIN_ENDPOINT} without its trailing {@code /api/v2/spans} &gt; {@value
+ *       #DEFAULT_URL}.
+ *   <li>{@code endpoint}: {@code GROW_ZIPKIN_ENDPOINT} &gt; {@code OTEL_EXPORTER_ZIPKIN_ENDPOINT}
+ *       (used verbatim) &gt; {@code <url>/api/v2/spans}.
+ *   <li>timeouts, retries, TLS and proxy: the common {@code GROW_ZIPKIN_*} variables.
+ * </ul>
+ *
+ * <p>Stock Zipkin has no authentication. Behind a gateway, put credentials in {@link
+ * Builder#header} (sensitive headers are redacted everywhere). {@link #toString()} never prints
+ * credentials.
  */
 public final class ZipkinConfig {
-  /** Default endpoint. */
-  public static final String DEFAULT_URL = "http://127.0.0.1:8080";
+  /** Default server URL. */
+  public static final String DEFAULT_URL = "http://127.0.0.1:9411";
+
+  /** Path of the Zipkin v2 span ingest API. */
+  public static final String SPANS_PATH = "/api/v2/spans";
 
   /** Vendor variables read for {@code url} after the SDK variable {@code URL}, in order. */
-  static final String[] URL_VENDOR_VARS = {};
+  static final String[] URL_VENDOR_VARS = {"ZIPKIN_URL"};
 
-  /** Vendor variables read for {@code token} after the SDK variable {@code TOKEN}, in order. */
-  static final String[] TOKEN_VENDOR_VARS = {};
+  /** Vendor variables read for {@code endpoint} after the SDK variable {@code ENDPOINT}. */
+  static final String[] ENDPOINT_VENDOR_VARS = {"OTEL_EXPORTER_ZIPKIN_ENDPOINT"};
+
+  /**
+   * Name that no environment variable can have ({@code =} is not allowed in names): reading it with
+   * vendor names returns only the vendor variables.
+   */
+  private static final String VENDOR_ONLY = "=";
 
   /** Vendor variables read for the CA bundle after the SDK variable {@code CA_CERT}. */
   static final String[] CA_CERT_VENDOR_VARS = {};
 
   private final String url;
-  private final Secret token;
+  private final String endpoint;
   private final Duration connectTimeout;
   private final Duration requestTimeout;
   private final Duration totalTimeout;
@@ -56,8 +76,8 @@ public final class ZipkinConfig {
   private final Logger logger;
 
   private ZipkinConfig(Builder b) {
-    this.url = b.url != null ? b.url : DEFAULT_URL;
-    this.token = b.token;
+    this.url = b.url != null && !b.url.isEmpty() ? b.url : DEFAULT_URL;
+    this.endpoint = b.endpoint != null && !b.endpoint.isEmpty() ? b.endpoint : spansEndpoint(url);
     this.connectTimeout = b.connectTimeout != null ? b.connectTimeout : Duration.ofSeconds(10);
     this.requestTimeout = b.requestTimeout != null ? b.requestTimeout : Duration.ofSeconds(30);
     this.totalTimeout = b.totalTimeout != null ? b.totalTimeout : Duration.ofSeconds(120);
@@ -77,6 +97,54 @@ public final class ZipkinConfig {
    */
   public static Builder builder() {
     return new Builder();
+  }
+
+  /**
+   * A builder pre-filled with this configuration.
+   *
+   * @return builder copy
+   */
+  public Builder toBuilder() {
+    Builder b = new Builder();
+    b.url = url;
+    b.endpoint = endpoint;
+    b.connectTimeout = connectTimeout;
+    b.requestTimeout = requestTimeout;
+    b.totalTimeout = totalTimeout;
+    b.retry = retry;
+    b.tls = tls;
+    b.proxy = proxy;
+    b.headers.putAll(headers);
+    b.userAgentSuffix = userAgentSuffix;
+    b.hooks = hooks;
+    b.logger = logger;
+    return b;
+  }
+
+  /**
+   * {@code <base>/api/v2/spans}, appended once: a base that already ends with the spans path is
+   * kept, a gateway prefix is preserved, trailing slashes are dropped.
+   *
+   * @param base server base URL
+   * @return the ingest URL
+   */
+  public static String spansEndpoint(String base) {
+    String trimmed = base.replaceAll("/+$", "");
+    return trimmed.endsWith(SPANS_PATH) ? trimmed : trimmed + SPANS_PATH;
+  }
+
+  /**
+   * The server base URL of a spans endpoint: strips one trailing {@code /api/v2/spans} (and
+   * slashes).
+   *
+   * @param endpoint ingest URL
+   * @return the base URL
+   */
+  public static String baseFromEndpoint(String endpoint) {
+    String trimmed = endpoint.replaceAll("/+$", "");
+    return trimmed.endsWith(SPANS_PATH)
+        ? trimmed.substring(0, trimmed.length() - SPANS_PATH.length())
+        : trimmed;
   }
 
   /**
@@ -106,16 +174,8 @@ public final class ZipkinConfig {
    * @throws ConfigException when a rule is violated
    */
   public void validate() {
-    URI u;
-    try {
-      u = new URI(url);
-    } catch (URISyntaxException e) {
-      throw new ConfigException("config: url is not a valid URL");
-    }
-    String scheme = u.getScheme() == null ? "" : u.getScheme().toLowerCase(Locale.ROOT);
-    if (!(scheme.equals("http") || scheme.equals("https")) || u.getHost() == null) {
-      throw new ConfigException("config: url must use http or https and include a host");
-    }
+    checkUrl("url", url);
+    checkUrl("endpoint", endpoint);
     requirePositive("connectTimeout", connectTimeout);
     requirePositive("requestTimeout", requestTimeout);
     requirePositive("totalTimeout", totalTimeout);
@@ -129,6 +189,19 @@ public final class ZipkinConfig {
       } catch (URISyntaxException e) {
         throw new ConfigException("config: proxy is not a valid URL");
       }
+    }
+  }
+
+  private static void checkUrl(String name, String value) {
+    URI u;
+    try {
+      u = new URI(value);
+    } catch (URISyntaxException e) {
+      throw new ConfigException("config: " + name + " is not a valid URL");
+    }
+    String scheme = u.getScheme() == null ? "" : u.getScheme().toLowerCase(Locale.ROOT);
+    if (!(scheme.equals("http") || scheme.equals("https")) || u.getHost() == null) {
+      throw new ConfigException("config: " + name + " must use http or https and include a host");
     }
   }
 
@@ -155,13 +228,28 @@ public final class ZipkinConfig {
         .userAgentSuffix(userAgentSuffix)
         .hooks(hooks)
         .logger(logger)
-        .knownSecrets(
-            () -> token == null || token.isCleared() ? List.of() : List.of(token.reveal()))
+        .knownSecrets(this::knownSecrets)
         .build();
   }
 
   /**
-   * Returns the endpoint base URL.
+   * Credential values to redact from error messages and logs (sensitive header values).
+   *
+   * @return the values
+   */
+  public List<String> knownSecrets() {
+    List<String> out = new ArrayList<>();
+    headers.forEach(
+        (name, value) -> {
+          if (Redaction.isSensitiveHeader(name) && value != null && !value.isEmpty()) {
+            out.add(value);
+          }
+        });
+    return out;
+  }
+
+  /**
+   * Returns the server base URL.
    *
    * @return the URL
    */
@@ -170,12 +258,12 @@ public final class ZipkinConfig {
   }
 
   /**
-   * Returns the API token.
+   * Returns the span ingest URL used by {@link ZipkinReporter} and the tracing exporter.
    *
-   * @return the token, or empty
+   * @return {@code <url>/api/v2/spans} unless set
    */
-  public Optional<Secret> token() {
-    return Optional.ofNullable(token);
+  public String endpoint() {
+    return endpoint;
   }
 
   /**
@@ -272,8 +360,8 @@ public final class ZipkinConfig {
   public String toString() {
     return "ZipkinConfig{url="
         + Redaction.redactUrl(url)
-        + ", token="
-        + (token == null ? "null" : Redaction.REDACTED)
+        + ", endpoint="
+        + Redaction.redactUrl(endpoint)
         + ", connectTimeout="
         + connectTimeout
         + ", requestTimeout="
@@ -301,7 +389,7 @@ public final class ZipkinConfig {
    */
   public static final class Builder {
     private String url;
-    private Secret token;
+    private String endpoint;
     private Duration connectTimeout;
     private Duration requestTimeout;
     private Duration totalTimeout;
@@ -324,10 +412,16 @@ public final class ZipkinConfig {
      */
     public Builder fromEnv(EnvReader env) {
       if (url == null) {
-        url = env.string("URL", URL_VENDOR_VARS).orElse(null);
+        url =
+            env.string("URL", URL_VENDOR_VARS)
+                .or(
+                    () ->
+                        env.string(VENDOR_ONLY, ENDPOINT_VENDOR_VARS)
+                            .map(ZipkinConfig::baseFromEndpoint))
+                .orElse(null);
       }
-      if (token == null) {
-        token = env.string("TOKEN", TOKEN_VENDOR_VARS).map(Secret::of).orElse(null);
+      if (endpoint == null) {
+        endpoint = env.string("ENDPOINT", ENDPOINT_VENDOR_VARS).orElse(null);
       }
       if (connectTimeout == null) {
         connectTimeout = env.duration("CONNECT_TIMEOUT").orElse(null);
@@ -361,7 +455,8 @@ public final class ZipkinConfig {
     }
 
     /**
-     * Sets the endpoint base URL.
+     * Sets the server base URL (default {@value ZipkinConfig#DEFAULT_URL}). A gateway path prefix
+     * is kept ({@code https://gw.example/zipkin} → {@code https://gw.example/zipkin/api/v2/...}).
      *
      * @param url {@code http} or {@code https} URL
      * @return this builder
@@ -372,24 +467,13 @@ public final class ZipkinConfig {
     }
 
     /**
-     * Sets the API token.
+     * Sets the full span ingest URL (default {@code <url>/api/v2/spans}).
      *
-     * @param token token
+     * @param endpoint {@code http} or {@code https} URL
      * @return this builder
      */
-    public Builder token(Secret token) {
-      this.token = token;
-      return this;
-    }
-
-    /**
-     * Sets the API token.
-     *
-     * @param token token
-     * @return this builder
-     */
-    public Builder token(String token) {
-      this.token = token == null ? null : Secret.of(token);
+    public Builder endpoint(String endpoint) {
+      this.endpoint = endpoint;
       return this;
     }
 
@@ -460,7 +544,8 @@ public final class ZipkinConfig {
     }
 
     /**
-     * Adds a header sent with every request.
+     * Adds a header sent with every request (gateway credentials go here; sensitive values are
+     * redacted).
      *
      * @param name header name
      * @param value header value
@@ -468,6 +553,17 @@ public final class ZipkinConfig {
      */
     public Builder header(String name, String value) {
       this.headers.put(name, value);
+      return this;
+    }
+
+    /**
+     * Adds headers sent with every request.
+     *
+     * @param headers headers
+     * @return this builder
+     */
+    public Builder headers(Map<String, String> headers) {
+      this.headers.putAll(headers);
       return this;
     }
 

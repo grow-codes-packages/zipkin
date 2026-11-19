@@ -12,12 +12,14 @@ import codes.grow.packages.zipkin.core.Hooks;
 import codes.grow.packages.zipkin.core.Logger;
 import codes.grow.packages.zipkin.core.MockServer;
 import codes.grow.packages.zipkin.core.RetryPolicy;
-import codes.grow.packages.zipkin.core.Secret;
 import codes.grow.packages.zipkin.core.TlsOptions;
 import codes.grow.packages.zipkin.core.UnsupportedException;
+import codes.grow.packages.zipkin.tracing.TracingConfig;
+import codes.grow.packages.zipkin.tracing.TracingConfig.Compression;
 import java.net.ServerSocket;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
@@ -46,31 +48,34 @@ class ZipkinClientTest {
   private ZipkinClient client() {
     return ZipkinClient.builder()
         .url(server.url())
-        .token("tok-123456")
+        .header("Authorization", "Bearer tok-123456")
         .retry(RetryPolicy.builder().initialBackoff(Duration.ofMillis(1)).build())
         .build();
   }
 
   @Test
   void healthVariants() {
+    Fixtures.enqueue(server, "health.ok");
     server
-        .enqueue(200, "{\"status\":\"ok\",\"version\":\"1.0\",\"nested\":{}}")
-        .enqueue(200, "{\"status\":\"degraded\"}")
-        .enqueue(503, "{\"status\":\"sealed\"}")
+        .enqueue(503, "{\"status\":\"DOWN\",\"zipkin\":{\"status\":\"DOWN\"}}")
+        .enqueue(503, "storage down", "Content-Type", "text/plain")
         .enqueue(500, "oops")
         .enqueue(200, "[1]")
-        .enqueue(200, "{\"status\":5}");
+        .enqueue(200, "{\"status\":\"DOWN\"}");
     try (var c = client()) {
       HealthStatus h = c.health();
-      assertThat(h).isEqualTo(new HealthStatus(true, "ok", Map.of("version", "1.0")));
-      assertThat(c.health().status()).isEqualTo("degraded");
-      HealthStatus sealed = c.health();
-      assertThat(sealed.healthy()).isFalse();
-      assertThat(sealed.status()).isEqualTo("sealed");
-      assertThat(sealed.details()).containsEntry("httpStatus", "503");
+      assertThat(h.healthy()).isTrue();
+      assertThat(h.status()).isEqualTo("UP");
+      assertThat(h.details()).containsEntry("zipkin", "UP");
+      assertThat(h.details().get("storage")).contains("InMemoryStorage");
+      HealthStatus down = c.health();
+      assertThat(down.healthy()).isFalse();
+      assertThat(down.status()).isEqualTo("DOWN");
+      assertThat(down.details()).containsEntry("httpStatus", "503");
+      assertThat(c.health().status()).isEqualTo("DOWN");
       assertThat(c.health().status()).isEqualTo("unhealthy");
-      assertThat(c.health().status()).isEqualTo("ok");
-      assertThat(c.healthAsync().join().details()).containsEntry("status", "5");
+      assertThat(c.healthAsync().join()).isEqualTo(new HealthStatus(true, "UP", Map.of()));
+      assertThat(c.health().healthy()).isFalse();
       assertThat(server.requests()).hasSize(6);
       assertThat(server.requests().get(0).uri()).isEqualTo("/health");
     }
@@ -100,15 +105,15 @@ class ZipkinClientTest {
   }
 
   @Test
-  void pingSendsBearerToken() {
-    server
-        .enqueue(200, "{}")
-        .enqueue(401, "{\"message\":\"bad token tok-123456\"}")
-        .enqueue(200, "{}");
+  void pingUsesTheServicesApiAndPassesGatewayHeaders() {
+    Fixtures.enqueue(server, "listServices.ok");
+    server.enqueue(401, "{\"message\":\"bad token tok-123456\"}");
+    Fixtures.enqueue(server, "listServices.empty");
     try (var c = client()) {
       assertThat(c.ping()).isPositive();
       assertThat(server.requests().get(0).header("Authorization")).isEqualTo("Bearer tok-123456");
-      assertThat(server.requests().get(0).uri()).isEqualTo("/v1/ping");
+      assertThat(server.requests().get(0).uri()).isEqualTo("/api/v2/services");
+      assertThat(server.requests().get(0).header("User-Agent")).startsWith("grow-codes-zipkin/");
       assertThatThrownBy(c::ping)
           .isInstanceOf(AuthenticationException.class)
           .message()
@@ -118,26 +123,46 @@ class ZipkinClientTest {
   }
 
   @Test
-  void pingWithoutToken() {
-    server.enqueue(200, "{}");
-    try (var c = ZipkinClient.builder().url(server.url()).build()) {
-      c.ping();
-      assertThat(server.requests().get(0).header("Authorization")).isNull();
+  void serverVersionAndInfo() {
+    Fixtures.enqueue(server, "serverVersion.ok", "serverVersion.ok");
+    server
+        .enqueue(404, "not found", "Content-Type", "text/*")
+        .enqueue(200, "{\"other\":1}")
+        .enqueue(200, "not json", "Content-Type", "text/plain")
+        .enqueue(200, "{\"zipkin\":{\"version\":\"\",\"commit\":7}}");
+    Fixtures.enqueue(server, "serverVersion.ok");
+    try (var c = client()) {
+      assertThat(c.serverVersion()).isEqualTo("3.6.1");
+      ZipkinServerInfo info = c.serverInfo();
+      assertThat(info.version()).contains("3.6.1");
+      assertThat(info.commit()).contains("b2b0c98");
+      assertThatThrownBy(c::serverVersion).isInstanceOf(UnsupportedException.class);
+      assertThatThrownBy(c::serverVersion).isInstanceOf(UnsupportedException.class);
+      assertThat(c.serverInfo().version()).isEmpty();
+      assertThat(c.serverInfo()).isEqualTo(new ZipkinServerInfo(null, null));
+      assertThat(c.serverVersionAsync().join()).isEqualTo("3.6.1");
+      assertThat(server.requests().get(0).uri()).isEqualTo("/info");
     }
   }
 
   @Test
-  void serverVersion() {
-    server
-        .enqueue(200, "{\"version\":\"1.2.3\"}")
-        .enqueue(404, "")
-        .enqueue(200, "{\"other\":1}")
-        .enqueue(200, "{\"version\":\"2.0.0\"}");
+  void queryAndReporterShareTheTransport() {
+    Fixtures.enqueue(server, "listServices.ok", "report.json");
+    server.enqueue(202, "");
     try (var c = client()) {
-      assertThat(c.serverVersion()).isEqualTo("1.2.3");
-      assertThatThrownBy(c::serverVersion).isInstanceOf(UnsupportedException.class);
-      assertThatThrownBy(c::serverVersion).isInstanceOf(UnsupportedException.class);
-      assertThat(c.serverVersionAsync().join()).isEqualTo("2.0.0");
+      assertThat(c.query()).isSameAs(c.query());
+      assertThat(c.query().listServices()).isNotEmpty();
+      assertThat(c.reporter()).isSameAs(c.reporter());
+      assertThat(c.reporter().endpoint()).isEqualTo(server.url() + "/api/v2/spans");
+      ZipkinSpan span =
+          ZipkinSpan.builder("463ac35c9f6413ad", "463ac35c9f6413ad").name("op").build();
+      c.reporter().report(List.of(span));
+      ZipkinReporter gz =
+          c.createReporter(ZipkinReporter.Options.defaults().compression(Compression.GZIP));
+      gz.report(List.of(span));
+      gz.close();
+      assertThat(c.transport().isClosed()).isFalse();
+      assertThat(server.requests().get(2).header("Content-Encoding")).isEqualTo("gzip");
     }
   }
 
@@ -150,12 +175,29 @@ class ZipkinClientTest {
         () -> {
           throw new IllegalStateException("ignored");
         });
+    ZipkinTracingHandle handle =
+        c.initTracing(
+            TracingConfig.builder("svc").setGlobal(false).build(),
+            ZipkinTracing.Options.builder().ignoreEnv());
+    assertThat(handle.endpoint()).isEqualTo(server.url() + "/api/v2/spans");
     c.close();
     c.close();
     assertThat(c.isClosed()).isTrue();
+    assertThat(handle.isShutdown()).isTrue();
     assertThat(closed).hasValue(1);
     assertThat(c.transport().isClosed()).isTrue();
     assertThatThrownBy(c::ping).isInstanceOf(CancelledException.class);
+    assertThatThrownBy(() -> c.initTracing(TracingConfig.builder("svc").build()))
+        .isInstanceOf(ConfigException.class);
+  }
+
+  @Test
+  void initTracingUsesProcessEnvironmentByDefault() {
+    try (var c = client()) {
+      ZipkinTracingHandle h = c.initTracing(TracingConfig.builder("svc").setGlobal(false).build());
+      assertThat(h.config().protocol()).isEqualTo(TracingConfig.Protocol.NATIVE);
+      h.shutdown();
+    }
   }
 
   @Test
@@ -164,8 +206,8 @@ class ZipkinClientTest {
     Logger logger = new Logger() {};
     try (var c =
         ZipkinClient.builder()
-            .url(server.url())
-            .token(Secret.of("s3cr3t-value"))
+            .url(server.url() + "/gw/")
+            .endpoint("http://collector:9411/api/v2/spans")
             .connectTimeout(Duration.ofSeconds(1))
             .requestTimeout(Duration.ofSeconds(2))
             .totalTimeout(Duration.ofSeconds(3))
@@ -173,13 +215,14 @@ class ZipkinClientTest {
             .tls(TlsOptions.defaults())
             .proxy("http://proxy.invalid:3128")
             .header("X-A", "1")
+            .headers(Map.of("X-Api-Key", "s3cr3t-value"))
             .userAgentSuffix("app/1")
             .hooks(hooks)
             .logger(logger)
             .build()) {
       ZipkinConfig cfg = c.config();
-      assertThat(cfg.url()).isEqualTo(server.url());
-      assertThat(cfg.token()).isPresent();
+      assertThat(cfg.url()).isEqualTo(server.url() + "/gw/");
+      assertThat(cfg.endpoint()).isEqualTo("http://collector:9411/api/v2/spans");
       assertThat(cfg.connectTimeout()).isEqualTo(Duration.ofSeconds(1));
       assertThat(cfg.requestTimeout()).isEqualTo(Duration.ofSeconds(2));
       assertThat(cfg.totalTimeout()).isEqualTo(Duration.ofSeconds(3));
@@ -192,8 +235,8 @@ class ZipkinClientTest {
       assertThat(cfg.logger()).isSameAs(logger);
       assertThat(c.toString()).doesNotContain("s3cr3t-value");
       assertThat(c.transport().config().knownSecrets()).containsExactly("s3cr3t-value");
-      cfg.token().get().clear();
-      assertThat(c.transport().config().knownSecrets()).isEmpty();
+      ZipkinConfig copy = cfg.toBuilder().build();
+      assertThat(copy.toString()).isEqualTo(cfg.toString());
     }
   }
 
@@ -202,23 +245,40 @@ class ZipkinClientTest {
     ZipkinConfig cfg =
         cfg()
             .url("http://user:pw@h:1")
-            .token("tok-very-secret")
             .header("Authorization", "Bearer tok-very-secret")
+            .header("X-Plain", "")
             .proxy("http://u:proxypass@p:3128")
             .build();
     assertThat(cfg.toString())
         .doesNotContain("tok-very-secret")
         .doesNotContain("proxypass")
-        .doesNotContain(":pw@")
-        .contains("token=[REDACTED]");
-    assertThat(cfg().build().toString()).contains("token=null").contains("proxy=null");
+        .doesNotContain(":pw@");
+    assertThat(cfg.knownSecrets()).containsExactly("Bearer tok-very-secret");
+    assertThat(cfg().build().toString()).contains("proxy=null");
+  }
+
+  @Test
+  void endpointHelpers() {
+    assertThat(ZipkinConfig.spansEndpoint("http://z:9411/"))
+        .isEqualTo("http://z:9411/api/v2/spans");
+    assertThat(ZipkinConfig.spansEndpoint("https://gw/zipkin"))
+        .isEqualTo("https://gw/zipkin/api/v2/spans");
+    assertThat(ZipkinConfig.spansEndpoint("http://z/api/v2/spans/"))
+        .isEqualTo("http://z/api/v2/spans");
+    assertThat(ZipkinConfig.baseFromEndpoint("http://z:9411/api/v2/spans"))
+        .isEqualTo("http://z:9411");
+    assertThat(ZipkinConfig.baseFromEndpoint("https://gw/zipkin/")).isEqualTo("https://gw/zipkin");
+    assertThat(cfg().build().endpoint()).isEqualTo("http://127.0.0.1:9411/api/v2/spans");
+    assertThat(cfg().url("https://gw/zipkin").endpoint("").build().endpoint())
+        .isEqualTo("https://gw/zipkin/api/v2/spans");
   }
 
   @Test
   void core_config_env_precedence() {
     Map<String, String> env = new HashMap<>();
     env.put(P + "URL", "http://from-env:1");
-    env.put(P + "TOKEN", "env-token");
+    env.put("ZIPKIN_URL", "http://vendor:2");
+    env.put("OTEL_EXPORTER_ZIPKIN_ENDPOINT", "http://otel:3/api/v2/spans");
     env.put(P + "CONNECT_TIMEOUT", "1500");
     env.put(P + "REQUEST_TIMEOUT", "2s");
     env.put(P + "TOTAL_TIMEOUT", "1m");
@@ -230,7 +290,7 @@ class ZipkinClientTest {
     env.put(P + "PROXY", "http://proxy:1");
     ZipkinConfig fromEnv = ZipkinConfig.fromEnv(env);
     assertThat(fromEnv.url()).isEqualTo("http://from-env:1");
-    assertThat(fromEnv.token().map(Secret::reveal)).contains("env-token");
+    assertThat(fromEnv.endpoint()).isEqualTo("http://otel:3/api/v2/spans");
     assertThat(fromEnv.connectTimeout()).isEqualTo(Duration.ofMillis(1500));
     assertThat(fromEnv.requestTimeout()).isEqualTo(Duration.ofSeconds(2));
     assertThat(fromEnv.totalTimeout()).isEqualTo(Duration.ofMinutes(1));
@@ -238,11 +298,23 @@ class ZipkinClientTest {
     assertThat(fromEnv.tls().insecureSkipVerify()).isTrue();
     assertThat(fromEnv.tls().caCertPath()).isPresent();
     assertThat(fromEnv.proxy()).contains("http://proxy:1");
+    // vendor variables: ZIPKIN_URL, then the base of OTEL_EXPORTER_ZIPKIN_ENDPOINT
+    assertThat(ZipkinConfig.fromEnv(Map.of("ZIPKIN_URL", "http://vendor:2")).endpoint())
+        .isEqualTo("http://vendor:2/api/v2/spans");
+    ZipkinConfig otel =
+        ZipkinConfig.fromEnv(Map.of("OTEL_EXPORTER_ZIPKIN_ENDPOINT", "https://gw/z/api/v2/spans"));
+    assertThat(otel.url()).isEqualTo("https://gw/z");
+    assertThat(otel.endpoint()).isEqualTo("https://gw/z/api/v2/spans");
+    ZipkinConfig grow =
+        ZipkinConfig.fromEnv(
+            Map.of(P + "ENDPOINT", "http://e:1/x", "OTEL_EXPORTER_ZIPKIN_ENDPOINT", "http://o:2"));
+    assertThat(grow.endpoint()).isEqualTo("http://e:1/x");
+    assertThat(grow.url()).isEqualTo("http://o:2");
     // explicit values win over the environment
     ZipkinConfig explicit =
         cfg()
             .url("http://explicit:2")
-            .token("explicit-token")
+            .endpoint("http://explicit:2/in")
             .connectTimeout(Duration.ofSeconds(9))
             .requestTimeout(Duration.ofSeconds(9))
             .totalTimeout(Duration.ofSeconds(9))
@@ -252,14 +324,13 @@ class ZipkinClientTest {
             .fromEnv(EnvReader.of(env))
             .build();
     assertThat(explicit.url()).isEqualTo("http://explicit:2");
-    assertThat(explicit.token().map(Secret::reveal)).contains("explicit-token");
+    assertThat(explicit.endpoint()).isEqualTo("http://explicit:2/in");
     assertThat(explicit.retry().maxRetries()).isZero();
     assertThat(explicit.tls().insecureSkipVerify()).isFalse();
     assertThat(explicit.proxy()).contains("http://p2:1");
     // defaults when nothing is set
     ZipkinConfig defaults = ZipkinConfig.fromEnv(Map.of());
     assertThat(defaults.url()).isEqualTo(ZipkinConfig.DEFAULT_URL);
-    assertThat(defaults.token()).isEmpty();
     assertThat(defaults.connectTimeout()).isEqualTo(Duration.ofSeconds(10));
     assertThat(defaults.requestTimeout()).isEqualTo(Duration.ofSeconds(30));
     assertThat(defaults.totalTimeout()).isEqualTo(Duration.ofSeconds(120));
@@ -283,6 +354,9 @@ class ZipkinClientTest {
     assertThatThrownBy(() -> cfg().url("ftp://x").build()).isInstanceOf(ConfigException.class);
     assertThatThrownBy(() -> cfg().url("http://[").build()).isInstanceOf(ConfigException.class);
     assertThatThrownBy(() -> cfg().url("mailto:x").build()).isInstanceOf(ConfigException.class);
+    assertThatThrownBy(() -> cfg().endpoint("ftp://x/api").build())
+        .isInstanceOf(ConfigException.class)
+        .hasMessageContaining("endpoint");
     assertThatThrownBy(() -> cfg().connectTimeout(Duration.ZERO).build())
         .isInstanceOf(ConfigException.class);
     assertThatThrownBy(() -> cfg().requestTimeout(Duration.ofSeconds(-1)).build())
@@ -293,7 +367,6 @@ class ZipkinClientTest {
         .isInstanceOf(ConfigException.class);
     assertThatThrownBy(() -> cfg().proxy("relative").build()).isInstanceOf(ConfigException.class);
     assertThatThrownBy(() -> cfg().proxy("http://[").build()).isInstanceOf(ConfigException.class);
-    assertThat(cfg().token((String) null).build().token()).isEmpty();
   }
 
   @Test
