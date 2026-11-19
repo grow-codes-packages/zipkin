@@ -33,6 +33,8 @@ describe("httpTracesEndpoint", () => {
   it("appends /v1/traces only to endpoints without a path", () => {
     expect(httpTracesEndpoint("http://collector:4318")).toBe("http://collector:4318/v1/traces");
     expect(httpTracesEndpoint("http://collector:4318/")).toBe("http://collector:4318/v1/traces");
+    expect(httpTracesEndpoint("http://collector:4318///")).toBe("http://collector:4318/v1/traces");
+    expect(httpTracesEndpoint(`http://collector:4318${"/".repeat(50_000)}`)).toBe("http://collector:4318/v1/traces");
     expect(httpTracesEndpoint("https://h/api/otlp/v1/traces")).toBe("https://h/api/otlp/v1/traces");
     expect(httpTracesEndpoint("https://h/otlp")).toBe("https://h/otlp");
     expect(httpTracesEndpoint("https://h/?k=v")).toBe("https://h/?k=v");

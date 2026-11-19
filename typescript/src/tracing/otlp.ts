@@ -66,8 +66,11 @@ export function httpTracesEndpoint(endpoint: string): string {
   } catch {
     return endpoint;
   }
-  if (url.search !== "" || url.pathname.replace(/\/+/g, "") !== "") return endpoint;
-  return `${endpoint.replace(/\/+$/, "")}/v1/traces`;
+  if (url.search !== "" || !/^\/*$/.test(url.pathname)) return endpoint;
+  // Strip trailing slashes with a loop, not a regex (no backtracking on long runs of "/").
+  let end = endpoint.length;
+  while (end > 0 && endpoint.charCodeAt(end - 1) === 47) end -= 1;
+  return `${endpoint.slice(0, end)}/v1/traces`;
 }
 
 /** `User-Agent` prefix of the OTLP exporters: `grow-codes-<key>/<version> (typescript)`. */

@@ -158,3 +158,14 @@ describe("redaction", () => {
     expect(redactError("raw s3cret!", ["s3cret!"]).message).toBe("raw [REDACTED]");
   });
 });
+
+describe("query-string redaction on hostile input", () => {
+  it("stays linear on long runs of '?!' after '&'", () => {
+    const hostile = `&${"?!".repeat(50_000)}`;
+    const started = Date.now();
+    expect(redactUrl(hostile)).toBe(hostile);
+    expect(redactError(new Error(hostile)).message).toBe(hostile);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(redactError(new Error("see h/p?a=1&api_key=xyz")).message).toBe("see h/p?a=1&api_key=[REDACTED]");
+  });
+});

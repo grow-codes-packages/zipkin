@@ -125,7 +125,7 @@ export function redactUrl(url: string | URL): string {
 }
 
 function redactQueryString(text: string): string {
-  return text.replace(/([?&])([^=&#\s]+)=([^&#\s]*)/g, (m, sep: string, k: string) =>
+  return text.replace(/([?&])([^=&#?\s]+)=([^&#\s]*)/g, (m, sep: string, k: string) =>
     isSensitiveField(k) ? `${sep}${k}=${REDACTED}` : m,
   );
 }

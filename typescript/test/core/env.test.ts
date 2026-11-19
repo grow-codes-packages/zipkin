@@ -15,6 +15,15 @@ describe("parsing", () => {
     expect(parseDuration("500ms")).toBe(500);
     expect(parseDuration("10s")).toBe(10_000);
     expect(parseDuration("2m")).toBe(120_000);
+    expect(parseDuration("1m30s")).toBe(90_000);
+    expect(parseDuration(".5s")).toBe(500);
+    expect(parseDuration("1.5s")).toBe(1500);
+    expect(parseDuration("250us")).toBe(0);
+    expect(parseDuration("1.s")).toBeUndefined();
+    expect(parseDuration(".s")).toBeUndefined();
+    expect(parseDuration("1.5")).toBeUndefined();
+    expect(parseDuration("5x")).toBeUndefined();
+    expect(parseDuration(`${"9".repeat(50_000)}x`)).toBeUndefined();
     expect(parseDuration("1h")).toBe(3_600_000);
     expect(parseDuration("1m30s")).toBe(90_000);
     expect(parseDuration("1.5s")).toBe(1500);
