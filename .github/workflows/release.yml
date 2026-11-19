@@ -10,7 +10,7 @@
 #              then set repository variable NPM_TRUSTED_PUBLISHING=true (or add secret NPM_TOKEN)
 #   crates.io  trusted publisher: repo grow-codes-packages/zipkin, workflow release.yml,
 #              then set CRATES_TRUSTED_PUBLISHING=true (or add secret CARGO_REGISTRY_TOKEN)
-#   PyPI       trusted publisher: repo grow-codes-packages/zipkin, workflow release.yml,
+#   PyPI       secret PYPI_API_TOKEN (first releases), or trusted publisher: repo grow-codes-packages/zipkin, workflow release.yml,
 #              environment pypi, then set PYPI_TRUSTED_PUBLISHING=true
 #   Maven      secrets MAVEN_CENTRAL_USERNAME, MAVEN_CENTRAL_PASSWORD (Central Portal user
 #              token), MAVEN_GPG_PRIVATE_KEY, MAVEN_GPG_PASSPHRASE
@@ -67,11 +67,12 @@ jobs:
         id: gate
         env:
           TRUSTED: ${{ vars.PYPI_TRUSTED_PUBLISHING }}
+          HAS_TOKEN: ${{ secrets.PYPI_API_TOKEN != '' }}
         run: |
-          if [ "$TRUSTED" = "true" ]; then
+          if [ "$TRUSTED" = "true" ] || [ "$HAS_TOKEN" = "true" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice title=PyPI publish skipped::Add this repo's release.yml (environment pypi) as trusted publisher of grow-zipkin on pypi.org, set the repository variable PYPI_TRUSTED_PUBLISHING=true and re-run this job."
+            echo "::notice title=PyPI publish skipped::Add this repo's release.yml (environment pypi) as trusted publisher of grow-zipkin on pypi.org and set the variable PYPI_TRUSTED_PUBLISHING=true, or add the secret PYPI_API_TOKEN, then re-run this job."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Download distributions
@@ -85,3 +86,5 @@ jobs:
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: dist
+          # Empty when unset: the action then uses trusted publishing (OIDC).
+          password: ${{ secrets.PYPI_API_TOKEN }}
