@@ -1,0 +1,75 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/trace/376b85a80f1dc0922796ce3c9de09dcb",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json"
+    ],
+    "body": [
+      {
+        "traceId": "376b85a80f1dc0922796ce3c9de09dcb",
+        "parentId": "7d968637882c65a4",
+        "id": "088c9e5fc9e3b8c7",
+        "kind": "CLIENT",
+        "name": "py-child",
+        "timestamp": 1795035890809593,
+        "duration": 32,
+        "localEndpoint": {
+          "serviceName": "grow-py-otel"
+        },
+        "tags": {
+          "error": "py-fail",
+          "otel.library.name": "grow-smoke",
+          "otel.library.version": "0.0.1",
+          "otel.scope.name": "grow-smoke",
+          "otel.scope.version": "0.0.1",
+          "otel.status_code": "ERROR",
+          "peer.service": "grow-py-peer",
+          "service.instance.id": "fe3e565c-903d-4f02-a5e5-7c4fe85950c1",
+          "service.name": "grow-py-otel",
+          "telemetry.sdk.language": "python",
+          "telemetry.sdk.name": "opentelemetry",
+          "telemetry.sdk.version": "1.45.2"
+        },
+        "debug": true
+      },
+      {
+        "traceId": "376b85a80f1dc0922796ce3c9de09dcb",
+        "id": "7d968637882c65a4",
+        "kind": "SERVER",
+        "name": "py-parent",
+        "timestamp": 1795035890809540,
+        "duration": 4382,
+        "localEndpoint": {
+          "serviceName": "grow-py-otel"
+        },
+        "annotations": [
+          {
+            "timestamp": 1795035890809556,
+            "value": "{\"py-event\": {\"k\": \"v\"}}"
+          }
+        ],
+        "tags": {
+          "flag": "true",
+          "grow.test": "grow-py-otel",
+          "n": "7",
+          "otel.library.name": "grow-smoke",
+          "otel.library.version": "0.0.1",
+          "otel.scope.name": "grow-smoke",
+          "otel.scope.version": "0.0.1",
+          "service.instance.id": "fe3e565c-903d-4f02-a5e5-7c4fe85950c1",
+          "service.name": "grow-py-otel",
+          "telemetry.sdk.language": "python",
+          "telemetry.sdk.name": "opentelemetry",
+          "telemetry.sdk.version": "1.45.2"
+        },
+        "debug": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/health",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json; charset=utf-8"
+    ],
+    "body": {
+      "status": "UP",
+      "zipkin": {
+        "status": "UP",
+        "details": {
+          "InMemoryStorage{}": {
+            "status": "UP"
+          }
+        }
+      }
+    }
+  }
+}

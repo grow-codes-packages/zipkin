@@ -1,0 +1,36 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/trace/aaaaaaaaaaaaaaaaad1c0df6bbbbbbbb",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json"
+    ],
+    "body": [
+      {
+        "traceId": "aaaaaaaaaaaaaaaaad1c0df6bbbbbbbb",
+        "id": "0000000000000011",
+        "kind": "SERVER",
+        "name": "proto-op",
+        "timestamp": 1795035874030000,
+        "duration": 7000,
+        "localEndpoint": {
+          "serviceName": "grow-proto"
+        },
+        "annotations": [
+          {
+            "timestamp": 1795035874030001,
+            "value": "ann"
+          }
+        ],
+        "tags": {
+          "grow.test": "grow-proto"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/traces?serviceName=grow-otlp-collector",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json"
+    ],
+    "body": [
+      [
+        {
+          "traceId": "47eb08ebb7ea90b570c80f24c88f4030",
+          "parentId": "6e7ffd0ad33fa9c6",
+          "id": "a21fcb32bd6971fe",
+          "kind": "SERVER",
+          "name": "okey-dokey-0",
+          "timestamp": 1795035886361836,
+          "duration": 123,
+          "localEndpoint": {
+            "serviceName": "grow-otlp-collector"
+          },
+          "remoteEndpoint": {
+            "serviceName": "telemetrygen-client",
+            "ipv4": "1.2.3.4"
+          },
+          "tags": {
+            "otel.scope.name": "telemetrygen"
+          }
+        },
+        {
+          "traceId": "47eb08ebb7ea90b570c80f24c88f4030",
+          "id": "6e7ffd0ad33fa9c6",
+          "kind": "CLIENT",
+          "name": "lets-go",
+          "timestamp": 1795035886361836,
+          "duration": 123,
+          "localEndpoint": {
+            "serviceName": "grow-otlp-collector"
+          },
+          "remoteEndpoint": {
+            "serviceName": "telemetrygen-server",
+            "ipv4": "1.2.3.4"
+          },
+          "tags": {
+            "otel.scope.name": "telemetrygen"
+          }
+        }
+      ]
+    ]
+  }
+}

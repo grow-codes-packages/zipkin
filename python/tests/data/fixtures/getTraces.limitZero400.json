@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/traces?limit=0",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 400,
+    "headers": [
+      "content-type: text/*"
+    ],
+    "body": "limit <= 0"
+  }
+}

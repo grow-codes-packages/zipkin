@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/autocompleteValues?key=grow.test",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json",
+      "cache-control: max-age=300, must-revalidate"
+    ],
+    "body": [
+      "grow-grpc",
+      "grow-gzip",
+      "grow-proto",
+      "run-a",
+      "run-b",
+      "v1"
+    ]
+  }
+}

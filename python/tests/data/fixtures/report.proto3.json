@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v2/spans",
+    "headers": [
+      "Content-Type: application/x-protobuf"
+    ],
+    "body": "<binary proto.bin, 109 bytes>"
+  },
+  "response": {
+    "status": 202,
+    "headers": [],
+    "body": null
+  }
+}

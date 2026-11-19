@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/metrics",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json"
+    ],
+    "body": {
+      "counter.zipkin_collector.messages.http": 0.0,
+      "counter.zipkin_collector.spans.grpc": 0.0,
+      "counter.zipkin_collector.spans_dropped.http": 0.0,
+      "counter.zipkin_collector.messages_dropped.http": 0.0,
+      "counter.zipkin_collector.bytes.http": 0.0,
+      "gauge.zipkin_collector.message_spans.http": 0.0,
+      "counter.zipkin_collector.spans.http": 0.0,
+      "gauge.zipkin_collector.message_spans.grpc": 0.0,
+      "counter.zipkin_collector.messages.grpc": 0.0,
+      "counter.zipkin_collector.messages_dropped.grpc": 0.0,
+      "counter.zipkin_collector.spans_dropped.grpc": 0.0,
+      "gauge.zipkin_collector.message_bytes.http": 0.0,
+      "counter.zipkin_collector.bytes.grpc": 0.0,
+      "gauge.zipkin_collector.message_bytes.grpc": 0.0
+    }
+  }
+}

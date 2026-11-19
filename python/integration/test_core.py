@@ -1,4 +1,4 @@
-"""Core round trips against the real service plus the core conformance scenarios."""
+"""Core round trips against the real Zipkin plus the core conformance scenarios."""
 
 from __future__ import annotations
 
@@ -15,24 +15,37 @@ from grow_zipkin.testing import ConformanceRunner, assert_scenario, pytest_param
 def test_health(client: sdk.ZipkinClient) -> None:
     status = client.health()
     assert status.healthy, status
+    assert status.status == "UP"
+    assert "InMemoryStorage" in status.details["storage"]
 
 
 def test_ping(client: sdk.ZipkinClient) -> None:
     assert client.ping() >= 0
 
 
-def test_server_version(client: sdk.ZipkinClient) -> None:
-    if "version" not in CORE_CAPABILITIES:
-        with pytest.raises(sdk.UnsupportedError):
-            client.server_version()
-        return
-    assert client.server_version()
+def test_server_version_and_info(client: sdk.ZipkinClient, env: dict[str, str]) -> None:
+    expected = env.get("ZIPKIN_VERSION", "3.6.1")
+    assert client.server_version() == expected
+    info = client.server_info()
+    assert info.version == expected
+    assert info.commit and all(c in "0123456789abcdef" for c in info.commit)
 
 
 def test_close_is_idempotent(env: dict[str, str]) -> None:
     c = core_client(env)
     c.close()
     c.close()
+    with pytest.raises(sdk.CancelledError):
+        c.ping()
+
+
+def test_from_env_endpoint_and_gateway_headers(env: dict[str, str]) -> None:
+    config = sdk.ZipkinConfig.from_env(env, headers={"Authorization": "Bearer gateway-token-xyz"})
+    assert config.endpoint == config.url.rstrip("/") + "/api/v2/spans"
+    assert "gateway-token-xyz" not in repr(config)
+    with sdk.ZipkinClient(config) as c:
+        # Stock Zipkin ignores the header; through a gateway it would authenticate the call.
+        assert c.ping() >= 0
 
 
 def test_async_client(env: dict[str, str]) -> None:
@@ -40,15 +53,10 @@ def test_async_client(env: dict[str, str]) -> None:
         async with async_core_client(env) as c:
             assert (await c.health()).healthy
             assert await c.ping() >= 0
+            assert await c.server_version() == env.get("ZIPKIN_VERSION", "3.6.1")
+            assert (await c.server_info()).version
 
     asyncio.run(run())
-
-
-def test_bad_token_is_rejected(env: dict[str, str]) -> None:
-    with core_client({**env, "GROW_ZIPKIN_TOKEN": "definitely-wrong-token"}) as c:
-        with pytest.raises(sdk.AuthenticationError) as info:
-            c.ping()
-        assert "definitely-wrong-token" not in str(info.value)
 
 
 @pytest.mark.parametrize("scenario", pytest_params(categories=["core"]))

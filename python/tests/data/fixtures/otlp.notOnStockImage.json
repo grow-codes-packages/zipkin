@@ -1,0 +1,17 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/v1/traces",
+    "headers": [
+      "Content-Type: application/x-protobuf"
+    ],
+    "body": "x"
+  },
+  "response": {
+    "status": 404,
+    "headers": [
+      "content-type: text/plain; charset=utf-8"
+    ],
+    "body": "404 Not Found"
+  }
+}

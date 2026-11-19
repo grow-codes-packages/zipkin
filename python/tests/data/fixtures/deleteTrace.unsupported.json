@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "DELETE",
+    "path": "/api/v2/trace/5af7183fb1d4cf5fad1c0df61d0a9b8c",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 404,
+    "headers": [
+      "content-type: text/plain; charset=utf-8"
+    ],
+    "body": "404 Not Found"
+  }
+}
