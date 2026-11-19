@@ -7,15 +7,16 @@ export interface RecordedRequest {
   url: string;
   headers: IncomingMessage["headers"];
   body: string;
-  /** The raw body bytes. */
-  raw: Buffer;
+  /** Raw request body bytes (binary payloads such as gzip or protobuf). */
+  rawBody: Buffer;
 }
 
 /** A canned response. */
 export interface MockResponse {
   status?: number;
   headers?: Record<string, string>;
-  body?: string | object;
+  /** A string or Buffer is sent as is; any other object as JSON (`application/json`). */
+  body?: string | object | Buffer;
   /** Delay before answering, in ms. */
   delayMs?: number;
   /** Destroy the socket instead of answering. */
@@ -35,10 +36,10 @@ export interface MockServer {
 }
 
 function send(res: ServerResponse, r: MockResponse): void {
-  const body =
-    r.body === undefined ? "" : typeof r.body === "string" ? r.body : JSON.stringify(r.body);
+  const raw = typeof r.body === "string" || Buffer.isBuffer(r.body);
+  const body = r.body === undefined ? "" : raw ? r.body : JSON.stringify(r.body);
   const headers: Record<string, string> = {
-    ...(typeof r.body === "object" ? { "content-type": "application/json" } : {}),
+    ...(r.body !== undefined && !raw ? { "content-type": "application/json" } : {}),
     ...r.headers,
   };
   res.writeHead(r.status ?? 200, headers);
@@ -56,12 +57,13 @@ export async function startServer(handler: MockHandler | MockResponse[]): Promis
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
+      const rawBody = Buffer.concat(chunks);
       const recorded: RecordedRequest = {
         method: req.method ?? "",
         url: req.url ?? "",
         headers: req.headers,
-        body: Buffer.concat(chunks).toString("utf8"),
-        raw: Buffer.concat(chunks),
+        body: rawBody.toString("utf8"),
+        rawBody,
       };
       const index = requests.length;
       requests.push(recorded);

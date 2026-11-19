@@ -69,7 +69,7 @@ describe("ZipkinReporter", () => {
     const req = s.requests[0];
     expect(req?.url).toBe("/custom/spans");
     expect(req?.headers["content-encoding"]).toBe("gzip");
-    expect(JSON.parse(gunzipSync(req!.raw).toString("utf8"))).toEqual([
+    expect(JSON.parse(gunzipSync(req!.rawBody).toString("utf8"))).toEqual([
       { traceId: "a".repeat(32), id: "b".repeat(16), kind: "SERVER", tags: { ok: "true", n: "3" } },
     ]);
     await reporter.close();
