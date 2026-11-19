@@ -30,6 +30,8 @@ dependencies = [
   "opentelemetry-api>=1.27,<2",
   "opentelemetry-sdk>=1.27,<2",
   "opentelemetry-exporter-otlp-proto-http>=1.27,<2",
+  # B3 is part of the Zipkin preset's default propagators (tracecontext, baggage, b3).
+  "opentelemetry-propagator-b3>=1.27,<2",
 ]
 
 [project.optional-dependencies]

@@ -6,7 +6,7 @@ and runs the integration and conformance tests with `node --test` against a real
 ```sh
 cd typescript && make pack            # writes dist/grow-codes-zipkin-<version>.tgz
 cd integration && npm run install-package
-GROW_ZIPKIN_URL=http://127.0.0.1:<port> GROW_ZIPKIN_TOKEN=... npm test
+GROW_ZIPKIN_URL=http://127.0.0.1:<port> npm test   # Zipkin started with AUTOCOMPLETE_KEYS=grow.test,http.method
 ```
 
 In CI and locally with Docker this runs inside `docker/Dockerfile.typescript`

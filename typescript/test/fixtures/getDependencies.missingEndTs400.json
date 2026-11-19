@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/dependencies",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 400,
+    "headers": [
+      "content-type: text/*"
+    ],
+    "body": "Mandatory parameter/header/attribute is missing: endTs"
+  }
+}

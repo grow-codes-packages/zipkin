@@ -360,9 +360,9 @@ def test_context_resolve_and_close() -> None:
 
 
 def demo_server(server: MockServer) -> None:
-    server.defaults["/health"] = Reply(200, {"status": "ok"})
-    server.defaults["/v1/ping"] = Reply(200, {"pong": True})
-    server.defaults["/version"] = Reply(200, {"version": "1.0.0"})
+    server.defaults["/health"] = Reply(200, {"status": "UP"})
+    server.defaults["/api/v2/services"] = Reply(200, [])
+    server.defaults["/info"] = Reply(200, {"zipkin": {"version": "1.0.0"}})
 
 
 @pytest.mark.parametrize("scenario_doc", r.pytest_params(categories=["core"]))

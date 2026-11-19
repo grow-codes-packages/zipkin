@@ -1,0 +1,28 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v2/spans",
+    "headers": [
+      "Content-Type: application/json"
+    ],
+    "body": [
+      {
+        "traceId": "5AF7183FB1D4CF5FAD1C0DF61D0A9B8C",
+        "id": "00000000000000E1",
+        "name": "upper-ids",
+        "timestamp": 1795035874000000,
+        "duration": 1,
+        "localEndpoint": {
+          "serviceName": "grow-upper"
+        }
+      }
+    ]
+  },
+  "response": {
+    "status": 400,
+    "headers": [
+      "content-type: text/*"
+    ],
+    "body": "5AF7183FB1D4CF5FAD1C0DF61D0A9B8C should be lower-hex encoded with no prefix reading List<Span> from json"
+  }
+}

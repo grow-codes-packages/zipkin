@@ -1,0 +1,217 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/traces",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json"
+    ],
+    "body": [
+      [
+        {
+          "traceId": "7777777777777777ad1c0df600000001",
+          "id": "00000000000000c1",
+          "kind": "PRODUCER",
+          "name": "send order",
+          "timestamp": 1795035874040000,
+          "duration": 2000,
+          "localEndpoint": {
+            "serviceName": "grow-mixed"
+          },
+          "remoteEndpoint": {
+            "serviceName": "kafka-broker"
+          },
+          "debug": true,
+          "shared": true
+        }
+      ],
+      [
+        {
+          "traceId": "eeeeeeeeeeeeeeeead1c0df6ffffffff",
+          "id": "0000000000000011",
+          "kind": "SERVER",
+          "name": "grpc-op",
+          "timestamp": 1795035874030000,
+          "duration": 7000,
+          "localEndpoint": {
+            "serviceName": "grow-grpc"
+          },
+          "annotations": [
+            {
+              "timestamp": 1795035874030001,
+              "value": "ann"
+            }
+          ],
+          "tags": {
+            "grow.test": "grow-grpc"
+          }
+        }
+      ],
+      [
+        {
+          "traceId": "ccccccccccccccccad1c0df6dddddddd",
+          "id": "0000000000000011",
+          "kind": "SERVER",
+          "name": "gzip-op",
+          "timestamp": 1795035874030000,
+          "duration": 7000,
+          "localEndpoint": {
+            "serviceName": "grow-gzip"
+          },
+          "annotations": [
+            {
+              "timestamp": 1795035874030001,
+              "value": "ann"
+            }
+          ],
+          "tags": {
+            "grow.test": "grow-gzip"
+          }
+        }
+      ],
+      [
+        {
+          "traceId": "aaaaaaaaaaaaaaaaad1c0df6bbbbbbbb",
+          "id": "0000000000000011",
+          "kind": "SERVER",
+          "name": "proto-op",
+          "timestamp": 1795035874030000,
+          "duration": 7000,
+          "localEndpoint": {
+            "serviceName": "grow-proto"
+          },
+          "annotations": [
+            {
+              "timestamp": 1795035874030001,
+              "value": "ann"
+            }
+          ],
+          "tags": {
+            "grow.test": "grow-proto"
+          }
+        }
+      ],
+      [
+        {
+          "traceId": "463ac35cad1c0df6",
+          "id": "00000000000000b1",
+          "name": "lonely-op",
+          "timestamp": 1795035874020000,
+          "duration": 5000,
+          "localEndpoint": {
+            "serviceName": "grow-lonely"
+          },
+          "tags": {
+            "grow.test": "run-b",
+            "not.indexed": "x"
+          }
+        }
+      ],
+      [
+        {
+          "traceId": "5af7183fb1d4cf5fad1c0df61d0a9b8c",
+          "id": "0000000000000001",
+          "kind": "SERVER",
+          "name": "get /api/orders",
+          "timestamp": 1795035874000000,
+          "duration": 150000,
+          "localEndpoint": {
+            "serviceName": "grow-frontend",
+            "ipv4": "10.0.0.1",
+            "port": 8080
+          },
+          "remoteEndpoint": {
+            "ipv4": "203.0.113.9",
+            "port": 51515
+          },
+          "annotations": [
+            {
+              "timestamp": 1795035874001000,
+              "value": "cache.miss"
+            }
+          ],
+          "tags": {
+            "grow.test": "run-a",
+            "http.method": "GET",
+            "http.path": "/api/orders"
+          }
+        },
+        {
+          "traceId": "5af7183fb1d4cf5fad1c0df61d0a9b8c",
+          "parentId": "0000000000000001",
+          "id": "0000000000000002",
+          "kind": "CLIENT",
+          "name": "get /orders",
+          "timestamp": 1795035874005000,
+          "duration": 100000,
+          "localEndpoint": {
+            "serviceName": "grow-frontend"
+          },
+          "remoteEndpoint": {
+            "serviceName": "grow-backend",
+            "port": 9000
+          },
+          "tags": {
+            "grow.test": "run-a",
+            "http.method": "GET"
+          }
+        },
+        {
+          "traceId": "5af7183fb1d4cf5fad1c0df61d0a9b8c",
+          "parentId": "0000000000000002",
+          "id": "0000000000000003",
+          "kind": "SERVER",
+          "name": "get /orders",
+          "timestamp": 1795035874010000,
+          "duration": 80000,
+          "localEndpoint": {
+            "serviceName": "grow-backend",
+            "port": 9000
+          },
+          "tags": {
+            "error": "boom",
+            "grow.test": "run-a",
+            "http.method": "GET"
+          }
+        }
+      ],
+      [
+        {
+          "traceId": "8888888888888888ad1c0df600000002",
+          "id": "00000000000000d1",
+          "name": "num-tag",
+          "timestamp": 1795035874000000,
+          "duration": 1,
+          "localEndpoint": {
+            "serviceName": "grow-numtag"
+          },
+          "tags": {
+            "f": "1.5",
+            "n": "7"
+          }
+        }
+      ],
+      [
+        {
+          "traceId": "11111111ad1c0df6",
+          "id": "11111111ad1c0df6",
+          "kind": "SERVER",
+          "name": "v1-op",
+          "timestamp": 1795035874000000,
+          "duration": 1000,
+          "localEndpoint": {
+            "serviceName": "grow-v1",
+            "ipv4": "10.0.0.2"
+          },
+          "tags": {
+            "grow.test": "v1"
+          }
+        }
+      ]
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "carrier": {
+    "traceparent": "00-c368c68727b28055688ce118cdcc2505-4dc887d1680631d0-01",
+    "b3": "c368c68727b28055688ce118cdcc2505-4dc887d1680631d0-1",
+    "x-b3-traceid": "c368c68727b28055688ce118cdcc2505",
+    "x-b3-spanid": "4dc887d1680631d0",
+    "x-b3-sampled": "1"
+  }
+}

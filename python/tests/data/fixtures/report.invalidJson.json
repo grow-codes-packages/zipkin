@@ -1,0 +1,17 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v2/spans",
+    "headers": [
+      "Content-Type: application/json"
+    ],
+    "body": "{not json"
+  },
+  "response": {
+    "status": 400,
+    "headers": [
+      "content-type: text/*"
+    ],
+    "body": "Expected a JSON_V2 encoded list\n"
+  }
+}

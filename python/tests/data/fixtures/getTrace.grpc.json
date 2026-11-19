@@ -1,0 +1,36 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/trace/eeeeeeeeeeeeeeeead1c0df6ffffffff",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json"
+    ],
+    "body": [
+      {
+        "traceId": "eeeeeeeeeeeeeeeead1c0df6ffffffff",
+        "id": "0000000000000011",
+        "kind": "SERVER",
+        "name": "grpc-op",
+        "timestamp": 1795035874030000,
+        "duration": 7000,
+        "localEndpoint": {
+          "serviceName": "grow-grpc"
+        },
+        "annotations": [
+          {
+            "timestamp": 1795035874030001,
+            "value": "ann"
+          }
+        ],
+        "tags": {
+          "grow.test": "grow-grpc"
+        }
+      }
+    ]
+  }
+}

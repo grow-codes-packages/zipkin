@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/traceMany?traceIds=5af7183fb1d4cf5fad1c0df61d0a9b8c",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 400,
+    "headers": [
+      "content-type: text/*"
+    ],
+    "body": "Use /api/v2/trace/{traceId} endpoint to retrieve a single trace"
+  }
+}

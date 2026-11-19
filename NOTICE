@@ -59,3 +59,28 @@ copyright and licence.
 
   CODE_OF_CONDUCT.md is adapted from the Contributor Covenant, version 2.1,
   https://www.contributor-covenant.org, licensed under CC BY 4.0.
+
+  Zipkin v2 data model and API. The span model (ZipkinSpan, Endpoint,
+  Annotation, DependencyLink), its JSON field names and the query parameters
+  are implemented from the published Zipkin API specification
+  (zipkin2-api.yaml) in https://github.com/openzipkin/zipkin-api,
+  Copyright The OpenZipkin Authors, licensed under the Apache License,
+  Version 2.0. No code of the Zipkin server or of the zipkin2 Java library is
+  included.
+
+  B3 propagation. The b3 / X-B3-* header formats follow the specification at
+  https://github.com/openzipkin/b3-propagation (Apache License, Version 2.0);
+  the propagators themselves come from the OpenTelemetry libraries of each
+  language.
+
+  OpenTelemetry to Zipkin mapping. ZipkinSpanExporter maps spans as described
+  in the OpenTelemetry specification "OpenTelemetry to Zipkin Transformation"
+  (https://opentelemetry.io/docs/specs/otel/trace/sdk_exporters/zipkin/),
+  Copyright The OpenTelemetry Authors, licensed under the Apache License,
+  Version 2.0. The exporter is written for this SDK and does not contain code
+  from the OpenTelemetry Zipkin exporters.
+
+  OpenTelemetry SDKs and B3 propagators (opentelemetry-js, opentelemetry-rust,
+  opentelemetry-go and its contrib propagators, opentelemetry-python,
+  opentelemetry-java) are runtime dependencies, Copyright The OpenTelemetry
+  Authors, licensed under the Apache License, Version 2.0.

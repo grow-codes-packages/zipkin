@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v2/spans",
+    "headers": [
+      "Content-Type: application/json"
+    ],
+    "body": [
+      {
+        "traceId": "8888888888888888ad1c0df600000002",
+        "id": "00000000000000d2",
+        "name": "bool-tag",
+        "timestamp": 1795035874000000,
+        "duration": 1,
+        "localEndpoint": {
+          "serviceName": "grow-numtag"
+        },
+        "tags": {
+          "b": true
+        }
+      }
+    ]
+  },
+  "response": {
+    "status": 400,
+    "headers": [
+      "content-type: text/*"
+    ],
+    "body": "Expected a string but was BOOLEAN at line 1 column 194 path $[0].tags.b\nSee https://github.com/google/gson/blob/main/Troubleshooting.md#unexpected-json-structure reading List<Span> from json"
+  }
+}

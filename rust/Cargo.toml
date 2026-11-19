@@ -13,7 +13,7 @@ homepage = "https://grow-codes-packages.github.io/zipkin/"
 repository = "https://github.com/grow-codes-packages/zipkin"
 documentation = "https://docs.rs/grow-zipkin"
 readme = "README.md"
-keywords = ["grow-codes", "sdk", "client"]
+keywords = ["grow-codes", "sdk", "zipkin", "tracing", "opentelemetry"]
 categories = ["api-bindings", "asynchronous"]
 include = ["src/**/*.rs", "Cargo.toml", "README.md", "LICENSE", "NOTICE"]
 
@@ -34,6 +34,7 @@ reqwest-middleware = ["dep:reqwest-middleware"]
 [dependencies]
 async-trait = "0.1.80"
 bytes = "1.6"
+flate2 = "1.0.30"
 futures = { version = "0.3.30", default-features = false, features = ["std", "async-await"] }
 httpdate = "1.0"
 rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"] }

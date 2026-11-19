@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/trace/11111111ad1c0df6",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json"
+    ],
+    "body": [
+      {
+        "traceId": "11111111ad1c0df6",
+        "id": "11111111ad1c0df6",
+        "kind": "SERVER",
+        "name": "v1-op",
+        "timestamp": 1795035874000000,
+        "duration": 1000,
+        "localEndpoint": {
+          "serviceName": "grow-v1",
+          "ipv4": "10.0.0.2"
+        },
+        "tags": {
+          "grow.test": "v1"
+        }
+      }
+    ]
+  }
+}

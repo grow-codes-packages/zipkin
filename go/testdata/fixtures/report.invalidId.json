@@ -1,0 +1,22 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v2/spans",
+    "headers": [
+      "Content-Type: application/json"
+    ],
+    "body": [
+      {
+        "traceId": "zz",
+        "id": "1"
+      }
+    ]
+  },
+  "response": {
+    "status": 400,
+    "headers": [
+      "content-type: text/*"
+    ],
+    "body": "zz should be lower-hex encoded with no prefix reading List<Span> from json"
+  }
+}

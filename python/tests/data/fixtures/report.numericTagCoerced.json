@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v2/spans",
+    "headers": [
+      "Content-Type: application/json"
+    ],
+    "body": [
+      {
+        "traceId": "8888888888888888ad1c0df600000002",
+        "id": "00000000000000d1",
+        "name": "num-tag",
+        "timestamp": 1795035874000000,
+        "duration": 1,
+        "localEndpoint": {
+          "serviceName": "grow-numtag"
+        },
+        "tags": {
+          "n": 7,
+          "f": 1.5
+        }
+      }
+    ]
+  },
+  "response": {
+    "status": 202,
+    "headers": [],
+    "body": null
+  }
+}

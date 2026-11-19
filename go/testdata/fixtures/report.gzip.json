@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v2/spans",
+    "headers": [
+      "Content-Type: application/json",
+      "Content-Encoding: gzip"
+    ],
+    "body": "<binary gzip.json.gz, 202 bytes>"
+  },
+  "response": {
+    "status": 202,
+    "headers": [],
+    "body": null
+  }
+}

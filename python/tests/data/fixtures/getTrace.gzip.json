@@ -1,0 +1,36 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/trace/ccccccccccccccccad1c0df6dddddddd",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json"
+    ],
+    "body": [
+      {
+        "traceId": "ccccccccccccccccad1c0df6dddddddd",
+        "id": "0000000000000011",
+        "kind": "SERVER",
+        "name": "gzip-op",
+        "timestamp": 1795035874030000,
+        "duration": 7000,
+        "localEndpoint": {
+          "serviceName": "grow-gzip"
+        },
+        "annotations": [
+          {
+            "timestamp": 1795035874030001,
+            "value": "ann"
+          }
+        ],
+        "tags": {
+          "grow.test": "grow-gzip"
+        }
+      }
+    ]
+  }
+}

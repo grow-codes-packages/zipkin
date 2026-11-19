@@ -1,0 +1,18 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/remoteServices?serviceName=grow-frontend",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json",
+      "cache-control: max-age=300, must-revalidate"
+    ],
+    "body": [
+      "grow-backend"
+    ]
+  }
+}

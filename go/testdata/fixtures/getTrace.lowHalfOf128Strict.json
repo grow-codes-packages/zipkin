@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/trace/ad1c0df61d0a9b8c",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 404,
+    "headers": [
+      "content-type: text/*"
+    ],
+    "body": "ad1c0df61d0a9b8c not found"
+  }
+}

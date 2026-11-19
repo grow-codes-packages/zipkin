@@ -10,42 +10,54 @@ import codes.grow.packages.zipkin.core.Hooks;
 import codes.grow.packages.zipkin.core.HttpTransport;
 import codes.grow.packages.zipkin.core.Logger;
 import codes.grow.packages.zipkin.core.RetryPolicy;
-import codes.grow.packages.zipkin.core.Secret;
 import codes.grow.packages.zipkin.core.TlsOptions;
 import codes.grow.packages.zipkin.core.TransportRequest;
 import codes.grow.packages.zipkin.core.TransportResponse;
 import codes.grow.packages.zipkin.core.UnsupportedException;
+import codes.grow.packages.zipkin.core.ZipkinException;
+import codes.grow.packages.zipkin.tracing.TracingConfig;
 import com.fasterxml.jackson.databind.JsonNode;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Client for Zipkin.
+ * Client for Zipkin (port 9411): health, ping and server version, plus the query API ({@link
+ * #query()}), the direct span reporter ({@link #reporter()}) and tracing setup ({@link
+ * #initTracing}).
  *
- * <p>Implements SPEC section 2.4. Thread-safe; create one per endpoint and close it when done.
+ * <p>Thread-safe; create one per server and close it when done. {@link #close()} also shuts down
+ * every tracing handle created through this client.
  *
  * <pre>{@code
  * try (ZipkinClient client = ZipkinClient.fromEnv()) {
  *   HealthStatus health = client.health();
+ *   List<String> services = client.query().listServices();
  * }
  * }</pre>
  *
  * <p>Every I/O method has a blocking form and an {@code …Async} form returning {@link
- * CompletableFuture}. This file is owned by the service package (generated once by sdk-kit); add
- * service modules here.
+ * CompletableFuture}.
  */
 public final class ZipkinClient implements AutoCloseable {
   private final ZipkinConfig config;
   private final HttpTransport transport;
   private final AtomicBoolean closed = new AtomicBoolean();
   private final List<AutoCloseable> resources = new ArrayList<>();
+  private final ZipkinQueryClient query;
+  private final ZipkinReporter reporter;
 
   private ZipkinClient(ZipkinConfig config) {
     this.config = config;
     this.transport = new HttpTransport(config.toTransportConfig());
+    this.query = new ZipkinQueryClient(transport, false, Clock.systemUTC());
+    this.reporter = new ZipkinReporter(transport, false, config, ZipkinReporter.Options.defaults());
   }
 
   /**
@@ -61,7 +73,8 @@ public final class ZipkinClient implements AutoCloseable {
   }
 
   /**
-   * Creates a client from the SDK and vendor environment variables.
+   * Creates a client from {@code GROW_ZIPKIN_*}, {@code ZIPKIN_URL} and {@code
+   * OTEL_EXPORTER_ZIPKIN_ENDPOINT}.
    *
    * @return a new client
    */
@@ -97,6 +110,35 @@ public final class ZipkinClient implements AutoCloseable {
   }
 
   /**
+   * The trace query client (shares this client's connections).
+   *
+   * @return the query client
+   */
+  public ZipkinQueryClient query() {
+    return query;
+  }
+
+  /**
+   * The span reporter (shares this client's connections; no compression, 512 spans per POST, the
+   * config's endpoint).
+   *
+   * @return the reporter
+   */
+  public ZipkinReporter reporter() {
+    return reporter;
+  }
+
+  /**
+   * A reporter with other options that shares this client's connections.
+   *
+   * @param options compression, batch size and endpoint
+   * @return the reporter
+   */
+  public ZipkinReporter createReporter(ZipkinReporter.Options options) {
+    return new ZipkinReporter(transport, false, config, options);
+  }
+
+  /**
    * Registers a resource (watcher, renewer, batch processor) closed with the client.
    *
    * @param resource the resource
@@ -108,13 +150,15 @@ public final class ZipkinClient implements AutoCloseable {
   }
 
   /**
-   * Checks liveness ({@code GET /health}). Never throws for an unhealthy or unreachable service.
+   * Liveness: {@code GET /health} → {@code {"status":"UP"}} with the {@code zipkin} and {@code
+   * storage} details. A 503 ({@code DOWN}, storage unavailable) gives {@code healthy=false} without
+   * retries. Never throws for an unhealthy or unreachable service.
    *
    * @return the health status
    * @throws CancelledException when interrupted or closed
    */
   public HealthStatus health() {
-    return HealthCheck.check(transport, "/health");
+    return HttpTransport.await(healthAsync(), "health");
   }
 
   /**
@@ -123,14 +167,60 @@ public final class ZipkinClient implements AutoCloseable {
    * @return a future with the health status
    */
   public CompletableFuture<HealthStatus> healthAsync() {
-    return HealthCheck.checkAsync(transport, "/health");
+    return transport
+        .sendAsync(
+            TransportRequest.get("/health")
+                .operation("health")
+                .acceptAnyStatus()
+                .maxRetries(0)
+                .build())
+        .handle(
+            (resp, err) -> {
+              if (err != null) {
+                ZipkinException e = HttpTransport.asSdkException(err, "health");
+                if (e instanceof CancelledException || e instanceof ConfigException) {
+                  throw e;
+                }
+                return HealthCheck.fromError(e);
+              }
+              return health(resp);
+            });
+  }
+
+  private static HealthStatus health(TransportResponse resp) {
+    JsonNode body = null;
+    try {
+      body = resp.jsonNode();
+    } catch (ZipkinException ignored) {
+      // not JSON
+    }
+    Map<String, String> details = new LinkedHashMap<>();
+    boolean ok = resp.status() >= 200 && resp.status() < 300;
+    String status = ok ? "UP" : resp.status() == 503 ? "DOWN" : "unhealthy";
+    if (body != null && body.isObject()) {
+      if (body.path("status").isTextual()) {
+        status = body.get("status").asText();
+      }
+      JsonNode zipkin = body.path("zipkin");
+      if (zipkin.path("status").isTextual()) {
+        details.put("zipkin", zipkin.get("status").asText());
+      }
+      if (zipkin.has("details")) {
+        details.put("storage", zipkin.get("details").toString());
+      }
+    }
+    if (!ok) {
+      details.put("httpStatus", Integer.toString(resp.status()));
+    }
+    return new HealthStatus(ok && !"DOWN".equalsIgnoreCase(status), status, details);
   }
 
   /**
-   * Performs an authenticated round trip ({@code GET /v1/ping}).
+   * Round trip through the query API and storage: {@code GET /api/v2/services} (through a gateway
+   * this also proves the auth headers).
    *
    * @return the latency
-   * @throws AuthenticationException on bad credentials
+   * @throws AuthenticationException when a gateway rejects the credentials
    */
   public Duration ping() {
     return HttpTransport.await(pingAsync(), "ping");
@@ -143,16 +233,56 @@ public final class ZipkinClient implements AutoCloseable {
    */
   public CompletableFuture<Duration> pingAsync() {
     long start = System.nanoTime();
-    return transport
-        .sendAsync(authorized(TransportRequest.get("/v1/ping").operation("ping")))
+    return ZipkinHttp.send(
+            transport, TransportRequest.get("/api/v2/services").operation("ping"), false)
         .thenApply(r -> Duration.ofNanos(System.nanoTime() - start));
   }
 
   /**
-   * Returns the server version ({@code GET /version}).
+   * Build information: {@code GET /info} → {@code {"zipkin":{"version","commit"}}}.
+   *
+   * @return the info (empty fields when the server or a gateway reports none)
+   */
+  public ZipkinServerInfo serverInfo() {
+    return HttpTransport.await(serverInfoAsync(), "serverVersion");
+  }
+
+  /**
+   * Asynchronous {@link #serverInfo()}.
+   *
+   * @return a future with the info
+   */
+  public CompletableFuture<ZipkinServerInfo> serverInfoAsync() {
+    return ZipkinHttp.send(
+            transport, TransportRequest.get("/info").operation("serverVersion"), true)
+        .thenApply(ZipkinClient::info);
+  }
+
+  private static ZipkinServerInfo info(TransportResponse r) {
+    if (r.status() == 404) {
+      return new ZipkinServerInfo(Optional.empty(), Optional.empty());
+    }
+    JsonNode zipkin;
+    try {
+      zipkin = r.jsonNode().path("zipkin");
+    } catch (ZipkinException e) {
+      return new ZipkinServerInfo(Optional.empty(), Optional.empty());
+    }
+    return new ZipkinServerInfo(text(zipkin, "version"), text(zipkin, "commit"));
+  }
+
+  private static Optional<String> text(JsonNode node, String field) {
+    JsonNode v = node.get(field);
+    return v != null && v.isTextual() && !v.asText().isEmpty()
+        ? Optional.of(v.asText())
+        : Optional.empty();
+  }
+
+  /**
+   * Server version (for example {@code 3.6.1}) from {@code GET /info}.
    *
    * @return the version string
-   * @throws UnsupportedException when the server exposes none
+   * @throws UnsupportedException when the server (or a gateway) reports none
    */
   public String serverVersion() {
     return HttpTransport.await(serverVersionAsync(), "serverVersion");
@@ -164,24 +294,47 @@ public final class ZipkinClient implements AutoCloseable {
    * @return a future with the version
    */
   public CompletableFuture<String> serverVersionAsync() {
-    return transport
-        .sendAsync(
-            authorized(
-                TransportRequest.get("/version").operation("serverVersion").acceptStatus(404)))
-        .thenApply(ZipkinClient::version);
+    return serverInfoAsync()
+        .thenApply(
+            i ->
+                i.version()
+                    .orElseThrow(
+                        () ->
+                            new UnsupportedException(
+                                "serverVersion: the service does not report a version")));
   }
 
-  private static String version(TransportResponse r) {
-    JsonNode v = r.status() == 404 ? null : r.jsonNode().get("version");
-    if (v == null || !v.isTextual()) {
-      throw new UnsupportedException("serverVersion: the server exposes no version");
+  /**
+   * Starts OpenTelemetry tracing to this Zipkin with the process environment beneath {@code config}
+   * (see {@link ZipkinTracing}). The native exporter uses this client's endpoint, headers, TLS,
+   * proxy, retries, hooks and logger; an explicit {@code config.endpoint} wins. The handle is shut
+   * down by {@link #close()}.
+   *
+   * @param config tracing config
+   * @return the running setup
+   */
+  public ZipkinTracingHandle initTracing(TracingConfig config) {
+    return initTracing(config, ZipkinTracing.Options.builder());
+  }
+
+  /**
+   * Like {@link #initTracing(TracingConfig)} with options (environment map, protocol, error
+   * callback). An explicit {@link ZipkinTracing.Options#clientConfig} wins over this client's
+   * config.
+   *
+   * @param config tracing config
+   * @param options options
+   * @return the running setup
+   * @throws ConfigException when the client is closed or a setting is invalid
+   */
+  public ZipkinTracingHandle initTracing(TracingConfig config, ZipkinTracing.Options options) {
+    if (closed.get()) {
+      throw new ConfigException("initTracing: client is closed");
     }
-    return v.asText();
-  }
-
-  private TransportRequest authorized(TransportRequest.Builder b) {
-    config.token().ifPresent(t -> b.header("Authorization", "Bearer " + t.reveal()));
-    return b.build();
+    ZipkinTracingHandle handle =
+        ZipkinTracing.initTracing(config, options.defaultClientConfig(this.config));
+    register(handle);
+    return handle;
   }
 
   /**
@@ -237,7 +390,7 @@ public final class ZipkinClient implements AutoCloseable {
     }
 
     /**
-     * Sets the endpoint base URL.
+     * Sets the server base URL.
      *
      * @param url URL
      * @return this builder
@@ -248,24 +401,13 @@ public final class ZipkinClient implements AutoCloseable {
     }
 
     /**
-     * Sets the API token.
+     * Sets the span ingest URL (default {@code <url>/api/v2/spans}).
      *
-     * @param token token
+     * @param endpoint URL
      * @return this builder
      */
-    public Builder token(String token) {
-      config.token(token);
-      return this;
-    }
-
-    /**
-     * Sets the API token.
-     *
-     * @param token token
-     * @return this builder
-     */
-    public Builder token(Secret token) {
-      config.token(token);
+    public Builder endpoint(String endpoint) {
+      config.endpoint(endpoint);
       return this;
     }
 
@@ -344,6 +486,17 @@ public final class ZipkinClient implements AutoCloseable {
      */
     public Builder header(String name, String value) {
       config.header(name, value);
+      return this;
+    }
+
+    /**
+     * Adds headers.
+     *
+     * @param headers headers
+     * @return this builder
+     */
+    public Builder headers(Map<String, String> headers) {
+      config.headers(headers);
       return this;
     }
 

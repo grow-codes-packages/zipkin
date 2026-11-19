@@ -1,0 +1,17 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v2/spans",
+    "headers": [
+      "Content-Type: application/x-protobuf"
+    ],
+    "body": "<binary garbage.bin, 7 bytes>"
+  },
+  "response": {
+    "status": 400,
+    "headers": [
+      "content-type: text/*"
+    ],
+    "body": "Expected a PROTO3 encoded list\n"
+  }
+}

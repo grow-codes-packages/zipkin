@@ -31,3 +31,34 @@ pub fn load_bootstrap_env() {
 pub fn conformance_dir() -> PathBuf {
     sdk::testing::scenarios_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
 }
+
+/// Random lower-case hex of `len` characters (no extra dependency: SipHash of time, process id
+/// and a counter). Every call returns distinct low 64 bits, which Zipkin's in-memory storage
+/// needs to keep traces apart.
+pub fn random_hex(len: usize) -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let mut out = String::new();
+    while out.len() < len {
+        let mut h = RandomState::new().build_hasher();
+        h.write_u128(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos(),
+        );
+        h.write_u32(std::process::id());
+        h.write_u64(COUNTER.fetch_add(1, Ordering::SeqCst));
+        out.push_str(&format!("{:016x}", h.finish()));
+    }
+    out.truncate(len);
+    out
+}
+
+/// A unique run tag (`GROW_TEST_RUN_ID` + random), lower-case (Zipkin lower-cases names).
+pub fn run_tag() -> String {
+    let id = std::env::var("GROW_TEST_RUN_ID").unwrap_or_else(|_| "local".into());
+    format!("{}-{}", id.to_ascii_lowercase(), random_hex(8))
+}

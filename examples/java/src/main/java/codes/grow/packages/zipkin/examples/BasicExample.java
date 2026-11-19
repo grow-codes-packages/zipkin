@@ -16,7 +16,8 @@ public final class BasicExample {
    * @param args unused
    */
   public static void main(String[] args) {
-    // Reads GROW_ZIPKIN_URL, GROW_ZIPKIN_TOKEN, timeouts, TLS and proxy settings.
+    // Reads GROW_ZIPKIN_URL (or ZIPKIN_URL), timeouts, TLS and proxy settings. Zipkin has no auth;
+    // behind a gateway add .header("Authorization", ...) with ZipkinClient.builder().
     try (var client = ZipkinClient.fromEnv()) {
       HealthStatus health = client.health(); // never throws for an unreachable service
       System.out.println("health: " + health);
@@ -26,9 +27,10 @@ public final class BasicExample {
       try {
         System.out.println("ping: " + client.ping().toMillis() + " ms");
       } catch (AuthenticationException e) {
-        // messages never contain the token
+        // only a gateway in front of Zipkin answers 401; messages never contain credentials
         System.out.println("bad credentials: " + e.getMessage());
       }
+      System.out.println("services: " + client.query().listServices());
       try {
         System.out.println("server version: " + client.serverVersion());
       } catch (UnsupportedException e) {

@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/trace/0000000000000000463ac35cad1c0df6",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json"
+    ],
+    "body": [
+      {
+        "traceId": "463ac35cad1c0df6",
+        "id": "00000000000000b1",
+        "name": "lonely-op",
+        "timestamp": 1795035874020000,
+        "duration": 5000,
+        "localEndpoint": {
+          "serviceName": "grow-lonely"
+        },
+        "tags": {
+          "grow.test": "run-b",
+          "not.indexed": "x"
+        }
+      }
+    ]
+  }
+}

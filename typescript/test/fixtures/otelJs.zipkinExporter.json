@@ -1,0 +1,57 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/trace/c368c68727b28055688ce118cdcc2505",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json"
+    ],
+    "body": [
+      {
+        "traceId": "c368c68727b28055688ce118cdcc2505",
+        "parentId": "4ef9aea2ce529810",
+        "id": "4dc887d1680631d0",
+        "kind": "CLIENT",
+        "name": "js-child",
+        "timestamp": 1795035892824000,
+        "duration": 171,
+        "localEndpoint": {
+          "serviceName": "grow-js-otel"
+        },
+        "tags": {
+          "error": "js-fail",
+          "otel.status_code": "ERROR",
+          "peer.service": "grow-js-peer",
+          "service.name": "grow-js-otel"
+        }
+      },
+      {
+        "traceId": "c368c68727b28055688ce118cdcc2505",
+        "id": "4ef9aea2ce529810",
+        "kind": "SERVER",
+        "name": "js-parent",
+        "timestamp": 1795035892824000,
+        "duration": 6423,
+        "localEndpoint": {
+          "serviceName": "grow-js-otel"
+        },
+        "annotations": [
+          {
+            "timestamp": 1795035892824128,
+            "value": "js-event"
+          }
+        ],
+        "tags": {
+          "flag": "true",
+          "grow.test": "grow-js-otel",
+          "n": "7",
+          "service.name": "grow-js-otel"
+        }
+      }
+    ]
+  }
+}

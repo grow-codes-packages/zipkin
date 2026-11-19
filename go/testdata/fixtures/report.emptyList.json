@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v2/spans",
+    "headers": [
+      "Content-Type: application/json"
+    ],
+    "body": []
+  },
+  "response": {
+    "status": 202,
+    "headers": [],
+    "body": null
+  }
+}

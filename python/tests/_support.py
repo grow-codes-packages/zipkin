@@ -22,6 +22,7 @@ class Reply:
     body: Any = None
     headers: dict[str, str] = dataclasses.field(default_factory=dict)
     delay: float = 0.0  # before the status line
+    content_type: str | None = None  # overrides the default text/plain or application/json
     drip: float = 0.0  # pause between body chunks (slow body)
 
 
@@ -65,7 +66,7 @@ class MockServer:
                     ctype = "application/json"
                 try:
                     self.send_response(reply.status)
-                    self.send_header("Content-Type", ctype)
+                    self.send_header("Content-Type", reply.content_type or ctype)
                     for k, v in reply.headers.items():
                         self.send_header(k, v)
                     self.send_header("Content-Length", str(len(payload)))
@@ -111,7 +112,12 @@ def fast_retry(**kw: Any) -> sdk.RetryPolicy:
 
 
 def make_config(url: str, **kw: Any) -> sdk.ZipkinConfig:
+    """A config with fast retries. Zipkin has no token option: ``token=`` becomes a gateway
+    ``Authorization: Bearer`` header (redacted like any credential)."""
     kw.setdefault("retry", fast_retry())
+    token = kw.pop("token", None)
+    if token is not None:
+        kw["headers"] = {**kw.get("headers", {}), "Authorization": f"Bearer {token}"}
     return sdk.ZipkinConfig(url=url, **kw)
 
 

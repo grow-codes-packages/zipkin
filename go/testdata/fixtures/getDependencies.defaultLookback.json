@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/dependencies?endTs=1795035940000",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json"
+    ],
+    "body": [
+      {
+        "parent": "grow-mixed",
+        "child": "kafka-broker",
+        "callCount": 1
+      },
+      {
+        "parent": "grow-frontend",
+        "child": "grow-backend",
+        "callCount": 1,
+        "errorCount": 1
+      }
+    ]
+  }
+}
