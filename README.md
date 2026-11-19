@@ -366,7 +366,7 @@ Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) 
 ## Trademarks and disclaimer
 
 This is an independent, community-maintained project. It is **not affiliated with, endorsed or
-sponsored by The OpenZipkin authors**. Zipkin is a trademark of The OpenZipkin authors; it is used here only to name the
+sponsored by its owner (The OpenZipkin authors)**. Zipkin is a trademark of The OpenZipkin authors; it is used here only to name the
 service this SDK connects to. The Zipkin server is licensed separately by its owner
 (Apache-2.0).
 

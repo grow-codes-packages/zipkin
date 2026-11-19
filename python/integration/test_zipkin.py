@@ -135,14 +135,16 @@ def test_get_trace_spans_returns_the_reported_spans(zipkin: sdk.ZipkinClient) ->
 
 def test_gzip_upper_case_ids_and_non_string_tags(zipkin: sdk.ZipkinClient) -> None:
     spans = zipkin.query.get_trace_spans(TRACE64)
-    assert spans is not None and len(spans) == 1
+    assert spans is not None
+    assert len(spans) == 1
     assert (spans[0].trace_id, spans[0].id) == (TRACE64, LONELY_ID)
     assert spans[0].tags == {"flag": "true", "grow.test": TAG, "n": "7"}
 
 
 def test_get_trace_normalized_missing_and_invalid(zipkin: sdk.ZipkinClient) -> None:
     trace = zipkin.query.get_trace(TRACE)
-    assert trace is not None and trace.trace_id == TRACE
+    assert trace is not None
+    assert trace.trace_id == TRACE
     root = trace.spans[0]
     assert (root.span_id, root.kind, root.service_name) == (ROOT, "server", FRONTEND)
     assert [(e.name, e.time_micros, dict(e.attributes)) for e in root.events] == [
@@ -152,7 +154,8 @@ def test_get_trace_normalized_missing_and_invalid(zipkin: sdk.ZipkinClient) -> N
     assert failed.status == sdk.SpanStatus("error", "boom")
     assert failed.parent_span_id == CLIENT_ID
     padded = zipkin.query.get_trace(TRACE64)
-    assert padded is not None and padded.trace_id == "0" * 16 + TRACE64
+    assert padded is not None
+    assert padded.trace_id == "0" * 16 + TRACE64
     assert zipkin.query.get_trace(hex_id(16)) is None
     with pytest.raises(sdk.ValidationError):
         zipkin.query.get_trace("not-a-trace")
@@ -298,7 +301,8 @@ def test_standalone_clients_own_their_connections(
             ]
         )
     spans = zipkin.query.get_trace_spans(trace_id)
-    assert spans is not None and len(spans) == 2
+    assert spans is not None
+    assert len(spans) == 2
 
 
 # --------------------------------------------------------------------------- async
@@ -351,9 +355,11 @@ def test_async_reporter_and_query(env: dict[str, str]) -> None:
             )
             q = client.query
             spans = await q.get_trace_spans(trace_id)
-            assert spans is not None and len(spans) == 2
+            assert spans is not None
+            assert len(spans) == 2
             trace = await q.get_trace(trace_id)
-            assert trace is not None and [s.name for s in trace.spans] == [
+            assert trace is not None
+            assert [s.name for s in trace.spans] == [
                 "async-root",
                 "async-child",
             ]

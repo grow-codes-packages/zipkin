@@ -157,7 +157,9 @@ export class ZipkinClient {
   /**
    * Starts OpenTelemetry tracing to this Zipkin (see the package-level `initTracing`). The
    * native exporter uses this client's endpoint, headers, TLS, proxy, retries, hooks and logger;
-   * an explicit `config.endpoint` wins. The handle is shut down by {@link close}.
+   * an explicit `config.endpoint` wins. The handle is shut down by {@link close}. On a closed
+   * client it throws `ConfigError` (`CONFIG`): starting tracing is a local setup step, not a
+   * request, so it does not fail with `CANCELLED` like the calls.
    */
   initTracing(config: TracingConfig, options: ZipkinInitTracingOptions = {}): ZipkinTracingHandle {
     if (this.#closed) throw new ConfigError("initTracing: client is closed");

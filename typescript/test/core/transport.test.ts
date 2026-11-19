@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type CommonConfigOptions,
+  ConflictError,
   type ErrorInfo,
+  type ErrorResponse,
+  NotFoundError,
+  UnavailableError,
   HttpTransport,
   LANGUAGE,
   PACKAGE_KEY,
@@ -360,11 +364,103 @@ describe("HttpTransport errors", () => {
     expect(assign).not.toContain("abc");
   });
 
-  it("allowStatus returns the response instead of throwing", async () => {
-    const s = await serve([{ status: 404, body: { message: "nope" } }]);
-    const res = await transport(s.url).get("/x", { allowStatus: [404] });
+  it("allowStatus returns the response with its decoded body instead of throwing", async () => {
+    const s = await serve((req) => {
+      if (req.url === "/json") return { status: 404, body: { message: "nope" } };
+      if (req.url === "/bad") return { status: 503, body: "{not json" };
+      if (req.url === "/text") return { status: 429, body: "slow down" };
+      return { status: 404 };
+    });
+    const t = transport(s.url, { retry: { maxRetries: 0 } });
+    const res = await t.get("/json", { allowStatus: [404] });
     expect(res.status).toBe(404);
-    expect(res.data).toBeUndefined();
+    expect(res.data).toEqual({ message: "nope" });
+    expect(res.text).toBe('{"message":"nope"}');
+    const bad = await t.get("/bad", { allowStatus: [503] });
+    expect(bad.data).toBeUndefined();
+    expect(bad.text).toBe("{not json");
+    const text = await t.get("/text", { allowStatus: [429], responseType: "text" });
+    expect(text.data).toBe("slow down");
+    const none = await t.get("/none", { allowStatus: [404], responseType: "none" });
+    expect(none.data).toBeUndefined();
+    expect(none.text).toBe("");
+    const ok = await serve([{ status: 200, body: { ok: true } }]);
+    expect((await transport(ok.url).get("/x", { allowStatus: [404] })).text).toBeUndefined();
+  });
+
+  it("vendor text is trimmed (no double space before the status)", async () => {
+    const s = await serve([
+      { status: 403, body: "  denied \n\n" },
+      { status: 403, body: { message: "spaced   out\n" } },
+    ]);
+    const t = transport(s.url, { retry: { maxRetries: 0 } });
+    expect((await failure(t.get("/x", { operation: "op" }))).message).toBe("op: denied (HTTP 403)");
+    expect((await failure(t.get("/x", { operation: "op" }))).message).toBe(
+      "op: spaced out (HTTP 403)",
+    );
+    expect(t.vendorText("   ")).toBeUndefined();
+    expect(t.vendorText(`x${"y ".repeat(150)}zz`)).toMatch(/y…$/);
+  });
+
+  it("classifyError maps error responses before retries and onError", async () => {
+    const s = await serve((req) => {
+      if (req.url === "/conflict") return { status: 400, body: { code: "VersionMismatch" } };
+      if (req.url === "/busy") return { status: 503, body: { code: "Fatal" } };
+      if (req.url === "/throw") return { status: 400, body: { code: "Throw" } };
+      return { status: 400, body: { message: "plain", code: "Other" } };
+    });
+    const seen: ErrorResponse[] = [];
+    const errors: string[] = [];
+    const t = transport(
+      s.url,
+      {
+        retry: { maxRetries: 2 },
+        hooks: {
+          onError: (info) => {
+            errors.push(info.error instanceof ZipkinError ? info.error.code : "?");
+          },
+        },
+      },
+      {
+        classifyError: (response) => {
+          seen.push(response);
+          const code = (JSON.parse(response.body) as { code?: string }).code;
+          if (code === "VersionMismatch")
+            return new ConflictError(`${response.operation}: version mismatch`, {
+              httpStatus: response.status,
+            });
+          if (code === "Fatal")
+            return new UnavailableError(`${response.operation}: fatal`, { retryable: false });
+          if (code === "Throw") throw new Error("classifier bug");
+          return undefined;
+        },
+      },
+    );
+    const conflict = await failure(t.get("/conflict", { operation: "op" }));
+    expect(conflict).toBeInstanceOf(ConflictError);
+    expect(conflict.message).toBe("op: version mismatch");
+    expect(seen[0]).toMatchObject({ operation: "op", method: "GET", status: 400, attempt: 1 });
+    expect(seen[0]?.defaultError.code).toBe("VALIDATION");
+    expect(errors).toEqual(["CONFLICT"]);
+    // a non-retryable mapped error stops retries of a retryable status
+    const busy = await failure(t.get("/busy", { operation: "op" }));
+    expect(busy.message).toBe("op: fatal");
+    expect(s.requests.filter((r) => r.url === "/busy")).toHaveLength(1);
+    // a classifier that throws a plain error keeps the default mapping
+    expect((await failure(t.get("/throw", { operation: "op" }))).code).toBe("VALIDATION");
+    const other = await failure(t.get("/other", { operation: "op" }));
+    expect(other.message).toBe("op: plain (HTTP 400)");
+    expect(seen.at(-1)?.reason).toBe("plain");
+    // the per-request classifier runs first; a thrown SDK error counts as returned
+    const perRequest = await failure(
+      t.get("/other", {
+        operation: "op",
+        classifyError: () => {
+          throw new NotFoundError("op: mapped per request");
+        },
+      }),
+    );
+    expect(perRequest).toBeInstanceOf(NotFoundError);
   });
 
   it("invalid JSON in a success response is a non-retryable UNAVAILABLE", async () => {
@@ -384,7 +480,7 @@ describe("HttpTransport errors", () => {
     expect((await transport(empty.url).get("/x")).data).toBeUndefined();
   });
 
-  it("requests after close fail with ConfigError; close is idempotent", async () => {
+  it("requests after close fail with CancelledError; close is idempotent", async () => {
     const s = await serve([{ status: 200 }]);
     const t = transport(s.url);
     await t.get("/x", { responseType: "none" });
@@ -392,7 +488,8 @@ describe("HttpTransport errors", () => {
     await t.close();
     expect(t.closed).toBe(true);
     const err = await failure(t.get("/x"));
-    expect(err.code).toBe("CONFIG");
+    expect(err.code).toBe("CANCELLED");
+    expect(err.message).toBe("GET /x: client is closed");
   });
 });
 

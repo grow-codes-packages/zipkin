@@ -55,7 +55,8 @@ def exported(env: dict[str, str]) -> Iterator[tuple[sdk.ZipkinClient, str]]:
     )
     headers: dict[str, str] = {}
     gw.propagator.inject(headers, context=otel_trace.set_span_in_context(root))
-    assert headers.get("traceparent") and headers.get("b3")
+    assert headers.get("traceparent")
+    assert headers.get("b3")
     remote = wk.propagator.extract(headers)
     server = wk.tracer("sdk-int").start_span(
         "handle /orders",
@@ -109,7 +110,8 @@ def test_span_tree_across_both_services(exported: tuple[sdk.ZipkinClient, str]) 
     trace = client.query.wait_for_trace(trace_id, min_spans=3, interval_s=0.2)
     assert trace.trace_id == trace_id
     tree = sdk.build_tree(trace.spans)
-    assert len(tree) == 1 and tree[0].span.name == "get /orders"
+    assert len(tree) == 1
+    assert tree[0].span.name == "get /orders"
     assert [c.span.name for c in tree[0].children] == ["handle /orders"]
     assert [c.span.name for c in tree[0].children[0].children] == ["db.query"]
     server = find(trace, "handle /orders")
@@ -136,16 +138,20 @@ def test_wire_mapping(exported: tuple[sdk.ZipkinClient, str]) -> None:
     assert "service.version" not in gw.tags  # resource attributes are not copied
     assert gw.tags["server.port"] == "9000"
     wk = raw(spans, "handle /orders")
-    assert wk.kind == "SERVER" and wk.parent_id == gw.id and wk.remote_endpoint is None
+    assert wk.kind == "SERVER"
+    assert wk.parent_id == gw.id
+    assert wk.remote_endpoint is None
     assert wk.tags["int.attr"] == "42"
     assert wk.tags["double.attr"] == "1.5"
     assert wk.tags["bool.attr"] == "true"
     assert wk.tags["array.attr"] == '["a","b"]'
-    assert wk.tags["otel.status_code"] == "ERROR" and wk.tags["error"] == "boom"
+    assert wk.tags["otel.status_code"] == "ERROR"
+    assert wk.tags["error"] == "boom"
     assert wk.annotations[0].value == '{"cache.miss":{"cache.key":"k1"}}'
     assert wk.debug is False
     db = raw(spans, "db.query")
-    assert db.kind is None and (db.duration or 0) >= 15_000
+    assert db.kind is None
+    assert (db.duration or 0) >= 15_000
 
 
 def test_dependencies_and_names_from_exported_spans(exported: tuple[sdk.ZipkinClient, str]) -> None:
@@ -171,7 +177,9 @@ def test_standalone_exporter_round_trip(exported: tuple[sdk.ZipkinClient, str]) 
         mapped = sdk.to_zipkin_span(span)
         assert exporter.export([span]) is SpanExportResult.SUCCESS
         back = client.query.get_trace_spans(mapped.trace_id)
-        assert back is not None and back[0].id == mapped.id and back[0].name == "direct-export"
+        assert back is not None
+        assert back[0].id == mapped.id
+        assert back[0].name == "direct-export"
     finally:
         exporter.shutdown()
         handle.shutdown()

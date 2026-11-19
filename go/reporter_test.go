@@ -165,7 +165,7 @@ func TestReporter(t *testing.T) {
 		if !errors.Is(err, ErrValidation) || !strings.Contains(err.Error(), "lower-hex") || bad.calls.Load() != 1 {
 			t.Fatalf("err=%v calls=%d", err, bad.calls.Load())
 		}
-		big := newTestServer(t, status(http.StatusRequestEntityTooLarge))
+		big := newTestServer(t, statusHandler(http.StatusRequestEntityTooLarge))
 		if err := newTestClient(t, big.URL, nil).Reporter().Report(t.Context(), span); !errors.Is(err, ErrValidation) || big.calls.Load() != 1 {
 			t.Fatalf("413: %v", err)
 		}

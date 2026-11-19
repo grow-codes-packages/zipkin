@@ -22,10 +22,15 @@ name = "grow_zipkin"
 path = "src/lib.rs"
 
 [features]
-# Blocking wrapper (`blocking::ZipkinClient`) that owns a current-thread tokio runtime.
+default = ["otlp-tls"]
+# Blocking wrapper (`blocking::ZipkinClient`) that owns a one-worker multi-thread tokio
+# runtime (background batching and exports keep running between blocking calls).
 blocking = []
 # In-memory fakes and the conformance runner (`testing` module).
 testing = []
+# OTLP/gRPC over TLS: `https` endpoints and `TracingConfig.tls` for `grpc` (opentelemetry-otlp
+# `tls-roots`, native root certificates).
+otlp-tls = ["opentelemetry-otlp/tls-roots"]
 # tower `TraceLayer` (works for axum and other tower/hyper servers).
 tower = ["dep:tower", "dep:pin-project-lite"]
 # `reqwest-middleware` middleware that creates client spans and injects trace context.
@@ -42,7 +47,7 @@ reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tl
 serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0.120"
 sha2 = "0.10.8"
-tokio = { version = "1.43", features = ["rt", "time", "sync", "macros"] }
+tokio = { version = "1.43", features = ["rt", "rt-multi-thread", "time", "sync", "macros"] }
 tokio-util = { version = "0.7.11", default-features = false }
 tracing = { version = "0.1.40", default-features = false, features = ["std", "attributes"] }
 url = "2.5"

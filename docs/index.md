@@ -37,5 +37,5 @@ Start with [Install](install.md) and the [Quickstart](quickstart.md).
 
 !!! note "Independent project"
     This SDK is made by [Grow Codes](https://grow.codes). Zipkin is a trademark of
-    The OpenZipkin authors. This project is not affiliated with or endorsed by The OpenZipkin authors. See
+    its owner (The OpenZipkin authors); this project is not affiliated with or endorsed by it. See
     [License & disclaimer](license.md).

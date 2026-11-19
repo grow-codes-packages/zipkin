@@ -71,7 +71,7 @@ func TestGetTrace(t *testing.T) {
 	if s, err := newTestClient(t, empty.URL, nil).Query().GetTraceSpans(t.Context(), "463ac35cad1c0df6"); err != nil || s != nil {
 		t.Fatalf("empty %v %v", s, err)
 	}
-	broken := newTestServer(t, status(http.StatusBadGateway))
+	broken := newTestServer(t, statusHandler(http.StatusBadGateway))
 	bq := newTestClient(t, broken.URL, func(c *Config) { c.Retry = fastRetry(0) }).Query()
 	if _, err := bq.GetTrace(t.Context(), "463ac35cad1c0df6"); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("502: %v", err)
@@ -208,7 +208,7 @@ func TestGetTraceManyChunks(t *testing.T) {
 			t.Fatalf("order at %d: %s != %s", i, tr[0].TraceID, want)
 		}
 	}
-	failing := newTestServer(t, status(http.StatusBadRequest))
+	failing := newTestServer(t, statusHandler(http.StatusBadRequest))
 	fq := newTestClient(t, failing.URL, nil).Query()
 	if _, err := fq.GetTraceMany(t.Context(), ids[:2]); !errors.Is(err, ErrValidation) {
 		t.Fatalf("chunk error: %v", err)
@@ -321,7 +321,7 @@ func TestDependencies(t *testing.T) {
 	if l, err := nq.GetDependencies(t.Context(), DependencyOptions{}); err != nil || l == nil {
 		t.Fatalf("now %v %v", l, err)
 	}
-	failing := newTestServer(t, status(http.StatusBadRequest))
+	failing := newTestServer(t, statusHandler(http.StatusBadRequest))
 	if _, err := newTestClient(t, failing.URL, nil).Query().GetDependencies(t.Context(), DependencyOptions{}); !errors.Is(err, ErrValidation) {
 		t.Fatal(err)
 	}
