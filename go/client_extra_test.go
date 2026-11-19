@@ -67,7 +67,7 @@ func TestClientServerInfo(t *testing.T) {
 	if info, err := newTestClient(t, ts404.URL, nil).ServerInfo(t.Context()); err != nil || info != (ServerInfo{}) {
 		t.Fatalf("404 info %+v %v", info, err)
 	}
-	ts500 := newTestServer(t, status(http.StatusInternalServerError))
+	ts500 := newTestServer(t, statusHandler(http.StatusInternalServerError))
 	if _, err := newTestClient(t, ts500.URL, func(c *Config) { c.Retry = fastRetry(0) }).ServerInfo(t.Context()); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("500: %v", err)
 	}

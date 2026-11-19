@@ -182,7 +182,7 @@ func TestClient(t *testing.T) {
 		if _, err := newTestClient(t, tsEmpty.URL, nil).ServerVersion(t.Context()); !errors.Is(err, ErrUnsupported) {
 			t.Fatalf("empty version: %v", err)
 		}
-		ts500 := newTestServer(t, status(http.StatusInternalServerError))
+		ts500 := newTestServer(t, statusHandler(http.StatusInternalServerError))
 		c := newTestClient(t, ts500.URL, func(cfg *Config) { cfg.Retry = fastRetry(0) })
 		if _, err := c.ServerVersion(t.Context()); !errors.Is(err, ErrUnavailable) {
 			t.Fatalf("version 500: %v", err)

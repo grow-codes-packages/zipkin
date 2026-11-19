@@ -3,8 +3,9 @@
 
 NPM ?= npm
 VITEST_FLAGS ?= --pool=threads --maxWorkers=2
+RELEASE_CHECK ?= python3 ../.github/scripts/release-check.py
 
-.PHONY: deps build lint test coverage license pack docs clean integration format
+.PHONY: deps build lint test coverage license pack release-check docs clean integration format
 
 deps:
 	@if [ -f package-lock.json ]; then $(NPM) ci --no-audit --no-fund; else $(NPM) install --no-audit --no-fund; fi
@@ -34,6 +35,15 @@ pack: build
 	rm -f dist/*.tgz
 	for f in LICENSE NOTICE; do if [ -f ../$$f ]; then cp ../$$f $$f; fi; done
 	$(NPM) pack --ignore-scripts --pack-destination dist
+
+# Release readiness (CI runs it after pack): the package.json metadata npm and provenance need,
+# then `npm publish --dry-run` of the packed tarball (no registry login needed).
+release-check: pack
+	$(RELEASE_CHECK) typescript
+	@set -- dist/*.tgz; \
+	if [ "$$#" -ne 1 ] || [ ! -f "$$1" ]; then echo "release-check: expected one tarball in dist/"; exit 1; fi; \
+	echo "$(NPM) publish ./$$1 --dry-run --ignore-scripts"; \
+	$(NPM) publish "./$$1" --dry-run --ignore-scripts
 
 # Not part of the shared contract: pack, install the tarball into integration/ and run the
 # integration tests against GROW_ZIPKIN_URL (needs a running service).

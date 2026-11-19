@@ -5,8 +5,9 @@ MVN ?= $(shell command -v mvn >/dev/null 2>&1 && echo mvn || echo ./mvnw)
 MVN_FLAGS ?= -B -T 1 --no-transfer-progress
 M := $(MVN) $(MVN_FLAGS)
 JACOCO_CSV := target/site/jacoco/jacoco.csv
+RELEASE_CHECK ?= python3 ../.github/scripts/release-check.py
 
-.PHONY: deps build lint test coverage license pack docs clean
+.PHONY: deps build lint test coverage license pack release-check docs clean
 
 deps:
 	$(M) -q dependency:go-offline
@@ -46,6 +47,12 @@ pack:
 	rm -f dist/*.jar
 	cp target/zipkin-*.jar dist/
 	@ls -1 dist
+
+# Release readiness: the `release` profile without credentials (GPG signing skipped, nothing
+# deployed) builds jar + sources + javadoc jars; the POM must carry the Maven Central metadata.
+release-check:
+	$(M) -P release -Dgpg.skip=true -Dmaven.test.skip=true -Djacoco.skip=true verify
+	$(RELEASE_CHECK) java
 
 docs:
 	$(M) -Djacoco.skip=true javadoc:javadoc

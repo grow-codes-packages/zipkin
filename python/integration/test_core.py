@@ -28,7 +28,8 @@ def test_server_version_and_info(client: sdk.ZipkinClient, env: dict[str, str]) 
     assert client.server_version() == expected
     info = client.server_info()
     assert info.version == expected
-    assert info.commit and all(c in "0123456789abcdef" for c in info.commit)
+    assert info.commit
+    assert all(c in "0123456789abcdef" for c in info.commit)
 
 
 def test_close_is_idempotent(env: dict[str, str]) -> None:

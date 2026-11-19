@@ -28,10 +28,10 @@ Trademarks
 -------------------------------------------------------------------------------
 
 This project is an independent, community-maintained client library. It is not
-affiliated with, endorsed or sponsored by The OpenZipkin authors.
-Zipkin is a trademark of The OpenZipkin authors. All other product names, logos and
-brands are the property of their respective owners and are used for
-identification purposes only.
+affiliated with, endorsed or sponsored by the owner of Zipkin
+(The OpenZipkin authors). Zipkin is a trademark of its owner (The OpenZipkin authors);
+all other product names, logos and brands are the property of their respective
+owners and are used for identification purposes only.
 
 The Zipkin server itself is licensed separately by its owner:
 Apache-2.0.

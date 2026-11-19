@@ -1,11 +1,26 @@
 {
   "$schema": "https://typedoc.org/schema.json",
   "name": "@grow-codes/zipkin",
-  "entryPoints": ["src/index.ts", "src/testing/index.ts"],
+  "entryPoints": ["src/index.ts", "src/testing-entry.ts"],
   "out": "docs/api",
   "excludePrivate": true,
   "excludeInternal": true,
   "readme": "README.md",
   "includeVersion": true,
+  "externalSymbolLinkMappings": {
+    "@opentelemetry/api": {
+      "SpanKind": "https://open-telemetry.github.io/opentelemetry-js/enums/_opentelemetry_api.SpanKind.html"
+    },
+    "@opentelemetry/sdk-trace": {
+      "ReadableSpan": "https://open-telemetry.github.io/opentelemetry-js/interfaces/_opentelemetry_sdk-trace-base.ReadableSpan.html"
+    },
+    "@opentelemetry/sdk-trace-base": {
+      "ReadableSpan": "https://open-telemetry.github.io/opentelemetry-js/interfaces/_opentelemetry_sdk-trace-base.ReadableSpan.html"
+    },
+    "@types/node": {
+      "Stream.Writable.write": "https://nodejs.org/api/stream.html#writablewritechunk-encoding-callback",
+      "Stream.Writable.end": "https://nodejs.org/api/stream.html#writableendchunk-encoding-callback"
+    }
+  },
   "treatWarningsAsErrors": false
 }

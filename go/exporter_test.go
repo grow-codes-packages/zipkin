@@ -152,7 +152,7 @@ func TestOTelTagValue(t *testing.T) {
 }
 
 func TestExportErrors(t *testing.T) {
-	srv := newTestServer(t, status(http.StatusBadRequest))
+	srv := newTestServer(t, statusHandler(http.StatusBadRequest))
 	r, err := NewReporter(Config{CommonConfig: CommonConfig{URL: srv.URL}}, ReporterOptions{})
 	if err != nil {
 		t.Fatal(err)
