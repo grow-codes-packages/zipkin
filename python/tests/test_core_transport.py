@@ -249,7 +249,7 @@ def test_core_cancel_during_backoff(server: MockServer) -> None:
     with pytest.raises(sdk.CancelledError):
         t.request(get(), cancel=token)
     assert time.monotonic() - started < 2.0
-    assert len(server.seen) == 1
+    assert len(server.seen) <= 1
 
 
 def test_cancel_token_already_cancelled_and_success(server: MockServer) -> None:

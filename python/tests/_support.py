@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import dataclasses
 import json
 import socket
@@ -121,11 +122,21 @@ def make_config(url: str, **kw: Any) -> sdk.ZipkinConfig:
     return sdk.ZipkinConfig(url=url, **kw)
 
 
+_REFUSING: list[socket.socket] = []
+atexit.register(lambda: [sock.close() for sock in _REFUSING])
+
+
 def closed_port_url() -> str:
+    """URL of a port that refuses connections.
+
+    The socket stays bound (never listening) for the whole test session: connects are refused,
+    and no other server (a parallel MockServer, another process) can take the port meanwhile,
+    which a bind-then-close port would allow.
+    """
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
+    _REFUSING.append(sock)
     port = sock.getsockname()[1]
-    sock.close()
     return f"http://127.0.0.1:{port}"
 
 

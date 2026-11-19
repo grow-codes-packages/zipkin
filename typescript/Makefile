@@ -38,12 +38,16 @@ pack: build
 
 # Release readiness (CI runs it after pack): the package.json metadata npm and provenance need,
 # then `npm publish --dry-run` of the packed tarball (no registry login needed).
+# A dry run that fails only because the version is already published passes.
 release-check: pack
 	$(RELEASE_CHECK) typescript
 	@set -- dist/*.tgz; \
 	if [ "$$#" -ne 1 ] || [ ! -f "$$1" ]; then echo "release-check: expected one tarball in dist/"; exit 1; fi; \
 	echo "$(NPM) publish ./$$1 --dry-run --ignore-scripts"; \
-	$(NPM) publish "./$$1" --dry-run --ignore-scripts
+	if out=$$($(NPM) publish "./$$1" --dry-run --ignore-scripts 2>&1); then echo "$$out"; \
+	elif echo "$$out" | grep -q "cannot publish over the previously published version"; then \
+	  echo "$$out" | grep -v "^npm error"; echo "release-check: this version is already on npm (expected between releases)"; \
+	else echo "$$out"; exit 1; fi
 
 # Not part of the shared contract: pack, install the tarball into integration/ and run the
 # integration tests against GROW_ZIPKIN_URL (needs a running service).

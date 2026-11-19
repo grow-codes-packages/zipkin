@@ -58,7 +58,7 @@ export async function fakeZipkin(): Promise<FakeZipkin> {
     if (req.method === "POST" && url.pathname === "/api/v2/spans") {
       const raw =
         req.headers["content-encoding"] === "gzip"
-          ? gunzipSync(req.raw).toString("utf8")
+          ? gunzipSync(req.rawBody).toString("utf8")
           : req.body;
       bodies.push(raw);
       for (const s of JSON.parse(raw) as StoredSpan[]) {
