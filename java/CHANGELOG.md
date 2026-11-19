@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/grow-codes-packages/zipkin/compare/java-v0.1.1...java-v0.1.2) (2026-11-19)
+
+
+### Dependencies
+
+* **java:** Bump the java group across 2 directories with 14 updates ([#14](https://github.com/grow-codes-packages/zipkin/issues/14)) ([bd2b43b](https://github.com/grow-codes-packages/zipkin/commit/bd2b43b5339b8f4cee88bdfc52207ad6a733886e))
+
 ## [0.1.1](https://github.com/grow-codes-packages/zipkin/compare/java-v0.1.0...java-v0.1.1) (2026-11-19)
 
 

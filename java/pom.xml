@@ -7,7 +7,7 @@
 
   <groupId>codes.grow.packages</groupId>
   <artifactId>zipkin</artifactId>
-  <version>0.1.1</version><!-- x-release-please-version -->
+  <version>0.1.2</version><!-- x-release-please-version -->
   <packaging>jar</packaging>
 
   <name>Grow Codes SDK for Zipkin</name>
