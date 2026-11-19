@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/traces?serviceName=grow-frontend&endTs=1000&lookback=1000",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": [
+      "content-type: application/json"
+    ],
+    "body": []
+  }
+}

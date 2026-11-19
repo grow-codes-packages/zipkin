@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/trace/5AF7183FB1D4CF5FAD1C0DF61D0A9B8C",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 400,
+    "headers": [
+      "content-type: text/*"
+    ],
+    "body": "5AF7183FB1D4CF5FAD1C0DF61D0A9B8C should be lower-hex encoded with no prefix"
+  }
+}

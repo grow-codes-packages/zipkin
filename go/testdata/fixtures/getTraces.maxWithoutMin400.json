@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v2/traces?maxDuration=10",
+    "headers": [],
+    "body": null
+  },
+  "response": {
+    "status": 400,
+    "headers": [
+      "content-type: text/*"
+    ],
+    "body": "maxDuration is only valid with minDuration"
+  }
+}
