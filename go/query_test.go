@@ -451,3 +451,26 @@ func TestGetTracesTerms(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildAnnotationQuery(t *testing.T) {
+	q, err := BuildAnnotationQuery(map[string]string{"http.method": "GET", "a": "1"}, []string{"error"})
+	if err != nil || q != "a=1 and http.method=GET and error" {
+		t.Fatalf("%q %v", q, err)
+	}
+	if q, err := BuildAnnotationQuery(nil, nil); err != nil || q != "" {
+		t.Fatalf("empty %q %v", q, err)
+	}
+	for _, bad := range []struct {
+		tags map[string]string
+		ann  []string
+	}{
+		{map[string]string{"": "x"}, nil},
+		{nil, []string{"a and b"}},
+		{map[string]string{"k=v": "x"}, nil},
+		{map[string]string{"k": "x and y"}, nil},
+	} {
+		if _, err := BuildAnnotationQuery(bad.tags, bad.ann); !errors.Is(err, ErrValidation) {
+			t.Fatalf("%v: %v", bad, err)
+		}
+	}
+}

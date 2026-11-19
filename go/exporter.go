@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/netip"
 	"strconv"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -57,16 +55,8 @@ func (e *SpanExporter) Shutdown(ctx context.Context) error {
 // UnknownService is the local service name used when the resource has no service.name.
 const UnknownService = "unknown_service"
 
-// ResourceTagKeys are the resource attributes copied into every span's tags (span
-// attributes with the same key win). Other resource attributes are not mapped;
-// service.name becomes localEndpoint.serviceName.
-var ResourceTagKeys = []string{"service.version", "service.namespace", "deployment.environment.name"}
-
 // remoteServiceKeys name the remote service of a CLIENT or PRODUCER span, by precedence.
 var remoteServiceKeys = []string{"peer.service", "server.address", "net.peer.name", "network.peer.address"}
-
-// remotePortKeys carry the remote port of a CLIENT or PRODUCER span, by precedence.
-var remotePortKeys = []string{"server.port", "network.peer.port", "net.peer.port"}
 
 // SDKSpanToZipkin converts an ended OpenTelemetry span to a Zipkin v2 span (the
 // OpenTelemetry → Zipkin mapping, identical in every language of this SDK):
@@ -77,18 +67,19 @@ var remotePortKeys = []string{"server.port", "network.peer.port", "net.peer.port
 //   - timestamp = start in epoch µs (truncated); duration = end − start in µs, rounded,
 //     at least 1.
 //   - localEndpoint.serviceName = resource service.name, else "unknown_service".
-//   - remoteEndpoint (CLIENT/PRODUCER only): serviceName = first of peer.service,
-//     server.address, net.peer.name, network.peer.address; ipv4/ipv6 =
-//     network.peer.address when it is an IP; port = first of server.port,
-//     network.peer.port, net.peer.port; omitted without a service name or IP.
-//   - tags = the resource attributes in ResourceTagKeys, then the span attributes
-//     (TagValue: booleans "true", numbers decimal, arrays JSON), then otel.scope.name /
+//   - remoteEndpoint (CLIENT/PRODUCER only): {serviceName} = first non-empty string of
+//     peer.service, server.address, net.peer.name, network.peer.address; omitted when
+//     none is set.
+//   - tags = the span attributes (TagValue: booleans "true", numbers decimal, arrays
+//     JSON), then otel.scope.name /
 //     otel.scope.version, otel.dropped_attributes_count / otel.dropped_events_count
 //     when > 0, and the status: ERROR → otel.status_code=ERROR + error=<description or
 //     "">, OK → otel.status_code=OK.
-//   - annotations = events: the event name, or {"<name>":{...attributes as tags}} when
-//     the event has attributes (AnnotationToEvent reverses it).
-//   - debug, shared, links and trace state are not mapped.
+//   - annotations = events: the event name, or the JSON text {"<name>":{...attributes}}
+//     (attribute values keep their JSON type) when the event has attributes
+//     (AnnotationToEvent reverses it).
+//   - debug, shared, links, trace state and resource attributes other than
+//     service.name are not mapped.
 func SDKSpanToZipkin(s sdktrace.ReadOnlySpan) ZipkinSpan {
 	sc := s.SpanContext()
 	start, end := s.StartTime(), s.EndTime()
@@ -118,11 +109,6 @@ func SDKSpanToZipkin(s sdktrace.ReadOnlySpan) ZipkinSpan {
 		set := r.Set()
 		if v, ok := set.Value("service.name"); ok && v.AsString() != "" {
 			out.LocalEndpoint.ServiceName = v.AsString()
-		}
-		for _, k := range ResourceTagKeys {
-			if v, ok := set.Value(attribute.Key(k)); ok {
-				out.Tags[k] = otelTagValue(v)
-			}
 		}
 	}
 	attrs := s.Attributes()
@@ -160,56 +146,19 @@ func SDKSpanToZipkin(s sdktrace.ReadOnlySpan) ZipkinSpan {
 	return out
 }
 
-// remoteEndpoint derives the remote endpoint of a CLIENT/PRODUCER span (nil when it
-// has neither a service name nor an IP).
+// remoteEndpoint derives the remote endpoint of a CLIENT/PRODUCER span: the first
+// non-empty string of remoteServiceKeys (nil when none is set).
 func remoteEndpoint(attrs []attribute.KeyValue) *Endpoint {
 	values := make(map[string]attribute.Value, len(attrs))
 	for _, kv := range attrs {
 		values[string(kv.Key)] = kv.Value
 	}
-	out := Endpoint{}
 	for _, k := range remoteServiceKeys {
 		if v, ok := values[k]; ok && v.Type() == attribute.STRING && v.AsString() != "" {
-			out.ServiceName = v.AsString()
-			break
+			return &Endpoint{ServiceName: v.AsString()}
 		}
 	}
-	if v, ok := values["network.peer.address"]; ok && v.Type() == attribute.STRING {
-		if ip, err := netip.ParseAddr(v.AsString()); err == nil {
-			if ip.Is4() {
-				out.IPv4 = v.AsString()
-			} else {
-				out.IPv6 = v.AsString()
-			}
-		}
-	}
-	for _, k := range remotePortKeys {
-		v, ok := values[k]
-		if !ok {
-			continue
-		}
-		port := int64(-1)
-		switch v.Type() {
-		case attribute.INT64:
-			port = v.AsInt64()
-		case attribute.FLOAT64:
-			if f := v.AsFloat64(); f == float64(int64(f)) {
-				port = int64(f)
-			}
-		case attribute.STRING:
-			if n, err := strconv.ParseInt(strings.TrimSpace(v.AsString()), 10, 64); err == nil {
-				port = n
-			}
-		}
-		if port > 0 && port <= 65535 {
-			out.Port = int(port)
-			break
-		}
-	}
-	if out.ServiceName == "" && out.IPv4 == "" && out.IPv6 == "" {
-		return nil
-	}
-	return &out
+	return nil
 }
 
 // marshalJSON encodes v without HTML escaping.
@@ -241,9 +190,9 @@ func eventValue(ev sdktrace.Event) string {
 	if len(ev.Attributes) == 0 {
 		return ev.Name
 	}
-	attrs := make(map[string]string, len(ev.Attributes))
+	attrs := make(map[string]any, len(ev.Attributes))
 	for _, kv := range ev.Attributes {
-		attrs[string(kv.Key)] = otelTagValue(kv.Value)
+		attrs[string(kv.Key)] = kv.Value.AsInterface()
 	}
 	return marshalJSON(map[string]any{ev.Name: attrs})
 }

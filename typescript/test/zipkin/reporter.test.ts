@@ -129,6 +129,12 @@ describe("ZipkinReporter", () => {
     expect(s.requests).toHaveLength(2);
     expect(s.requests[0]?.headers.authorization).toBe("Bearer gw");
     await client.close();
+    await expect(client.reporter.report(recorded)).rejects.toMatchObject({ code: "CANCELLED" });
+    await expect(client.ping()).rejects.toMatchObject({ code: "CANCELLED" });
+    await expect(client.transport.get("/x")).rejects.toMatchObject({
+      code: "CANCELLED",
+      message: "GET /x: client is closed",
+    });
     process.env.GROW_ZIPKIN_ENDPOINT = `${s.url}/env/spans`;
     try {
       const r = ZipkinReporter.fromEnv({}, { maxBatchSize: 10 });

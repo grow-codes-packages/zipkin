@@ -18,17 +18,20 @@ has the same functions, options, defaults, error codes and behaviour, tested aga
 
 ## What you get
 
-- **Client** with health, authenticated ping and server version ([Client](client.md)).
-- **Configuration** from code or `GROW_ZIPKIN_*` / vendor environment variables, immutable
-  and validated ([Configuration](configuration.md)).
+- **Tracing**: OpenTelemetry setup in one call with the package's own Zipkin exporter (v2 JSON to
+  `/api/v2/spans`, no deprecated OpenTelemetry Zipkin exporter), W3C + B3 propagation, span
+  helpers and framework adapters ([Tracing setup](functions/tracing-setup.md), [Tracing](tracing.md)).
+- **Span reporter**: send Zipkin v2 spans without OpenTelemetry ([Span reporter](functions/reporter.md)).
+- **Trace queries**: the full Zipkin v2 query API plus the category `TraceQueryClient` with one
+  normalized trace model ([Trace queries](functions/query.md)).
+- **Client** with health, ping and server version ([Client and status](functions/client.md)).
+- **Configuration** from code or `GROW_ZIPKIN_*` / `ZIPKIN_URL` / `OTEL_EXPORTER_ZIPKIN_ENDPOINT`,
+  immutable and validated ([Configuration](configuration.md)).
 - **Retries** with full-jitter backoff and `Retry-After`, connect/request/total timeouts and
   cancellation in every language.
 - **Typed errors** with one set of codes across languages ([Error handling](errors.md)).
-- **Redaction everywhere**: credentials never appear in errors, logs, hooks or `toString`
+- **Redaction everywhere**: gateway credentials never appear in errors, logs, hooks or `toString`
   ([Redaction](redaction.md)).
-- **Tracing**: OpenTelemetry setup, span helpers, propagation, framework adapters and trace
-  queries ([Tracing](tracing.md)).
-- **Service functions** for the Zipkin API ([Functions](functions.md)).
 
 Start with [Install](install.md) and the [Quickstart](quickstart.md).
 

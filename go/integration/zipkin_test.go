@@ -83,6 +83,9 @@ func TestZipkinAPI(t *testing.T) {
 		if v, err := client.ServerVersion(ctx); err != nil || v != want {
 			t.Fatalf("version %q %v (want %q)", v, err, want)
 		}
+		if info, err := client.ServerInfo(ctx); err != nil || info.Version != want || info.Commit == "" {
+			t.Fatalf("server info %+v %v", info, err)
+		}
 	})
 
 	t.Run("report", func(t *testing.T) {
@@ -126,6 +129,21 @@ func TestZipkinAPI(t *testing.T) {
 		if err := r.Report(ctx, []zipkin.ZipkinSpan{{TraceID: "zz", ID: "1"}}); !errors.Is(err, zipkin.ErrValidation) {
 			t.Fatalf("invalid span: %v", err)
 		}
+		// Client.CreateReporter shares the client's connections; the span is read back.
+		cr, err := client.CreateReporter(zipkin.ReporterOptions{Compression: zipkin.CompressionGzip})
+		if err != nil {
+			t.Fatal(err)
+		}
+		traceC := randomHex(t, 32)
+		if err := cr.Report(ctx, []zipkin.ZipkinSpan{{
+			TraceID: traceC, ID: "00000000000000c1", Name: "created-reporter", Timestamp: ts, Duration: 1000,
+			LocalEndpoint: &zipkin.Endpoint{ServiceName: lonely},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		if spans, err := q.GetTraceSpans(ctx, traceC); err != nil || len(spans) != 1 || spans[0].Name != "created-reporter" {
+			t.Fatalf("created reporter read back %v %v", spans, err)
+		}
 	})
 
 	t.Run("getTrace", func(t *testing.T) {
@@ -166,7 +184,7 @@ func TestZipkinAPI(t *testing.T) {
 		traces, err := q.GetTraces(ctx, zipkin.TracesQuery{
 			ServiceName:     front,
 			SpanName:        "get /api/orders",
-			AnnotationQuery: "grow.test=" + run + " and cache.miss",
+			AnnotationQuery: mustAnnotationQuery(t, map[string]string{"grow.test": run}, []string{"cache.miss"}),
 			MinDuration:     100 * time.Millisecond,
 			MaxDuration:     200 * time.Millisecond,
 			EndTs:           time.Now(),
@@ -372,12 +390,11 @@ func TestTracing(t *testing.T) {
 	}
 	root, cl, fail := byName["otel-root"], byName["otel-client"], byName["otel-fail"]
 	if root.Kind != zipkin.SpanKindServer || root.ServiceName != service || len(root.Events) != 1 ||
-		root.Events[0].Name != "checkpoint" || root.Events[0].Attributes["step"] != "1" ||
+		root.Events[0].Name != "checkpoint" || root.Events[0].Attributes["step"] != int64(1) ||
 		root.Attributes["otel.scope.name"] != "grow-integration" {
 		t.Fatalf("root %+v", root)
 	}
-	if cl.Kind != zipkin.SpanKindClient || cl.ParentSpanID != root.SpanID || cl.Attributes["n"] != "7" || cl.Attributes["flag"] != "true" ||
-		cl.Attributes["service.version"] != "1.0.0" {
+	if cl.Kind != zipkin.SpanKindClient || cl.ParentSpanID != root.SpanID || cl.Attributes["n"] != "7" || cl.Attributes["flag"] != "true" {
 		t.Fatalf("client %+v", cl)
 	}
 	if fail.Status.Code != zipkin.SpanStatusError || fail.Status.Message != "otel-fail" || len(fail.Events) == 0 {
@@ -401,5 +418,40 @@ func TestTracing(t *testing.T) {
 	}
 	if err := h.Shutdown(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func mustAnnotationQuery(t *testing.T, tags map[string]string, annotations []string) string {
+	t.Helper()
+	q, err := zipkin.BuildAnnotationQuery(tags, annotations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return q
+}
+
+// TestClientInitTracing starts tracing through Client.InitTracing (the client's endpoint
+// and connections); Client.Close flushes the spans, which a second client reads back.
+func TestClientInitTracing(t *testing.T) {
+	ctx := t.Context()
+	reader := setup(t) // loads /bootstrap/env
+	c, err := zipkin.NewClientFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := "grow-go-" + randomHex(t, 8) + "-client-otel"
+	h, err := c.InitTracing(ctx, zipkin.TracingConfig{ServiceName: service, DisableSetGlobal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, span := h.Tracer("grow-integration").Start(ctx, "client-init-tracing")
+	traceID := span.SpanContext().TraceID().String()
+	span.End()
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	tr, err := reader.Query().WaitForTrace(ctx, traceID, zipkin.WaitForTraceOptions{MinSpans: 1, Timeout: 30 * time.Second, Interval: 200 * time.Millisecond})
+	if err != nil || tr.Spans[0].Name != "client-init-tracing" || tr.Spans[0].ServiceName != service {
+		t.Fatalf("trace %+v %v", tr, err)
 	}
 }

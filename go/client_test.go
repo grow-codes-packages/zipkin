@@ -112,7 +112,8 @@ func TestClient(t *testing.T) {
 	t.Run("health ping version", func(t *testing.T) {
 		c := newTestClient(t, ts.URL, nil)
 		hs, err := c.Health(t.Context())
-		if err != nil || !hs.Healthy || hs.Status != "UP" || hs.Details["zipkin"] != "UP" || hs.Details["httpStatus"] != "200" {
+		if err != nil || !hs.Healthy || hs.Status != "UP" || hs.Details["zipkin"] != "UP" || hs.Details["httpStatus"] != "200" ||
+			hs.Details["storage"] != `{"InMemoryStorage{}":{"status":"UP"}}` {
 			t.Fatalf("health %+v %v", hs, err)
 		}
 		if d, err := c.Ping(t.Context()); err != nil || d <= 0 {

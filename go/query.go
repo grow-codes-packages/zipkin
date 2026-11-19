@@ -497,3 +497,34 @@ func (q *QueryClient) SearchTraces(ctx context.Context, query TraceSearchQuery) 
 func (q *QueryClient) WaitForTrace(ctx context.Context, traceID string, opts WaitForTraceOptions) (*Trace, error) {
 	return WaitForTrace(ctx, q, traceID, opts)
 }
+
+// BuildAnnotationQuery builds a Zipkin annotationQuery from exact tag matches (sorted by
+// key) and bare terms (a tag key or an annotation value), joined with " and ". It returns
+// "" when both are empty and a VALIDATION error for a term Zipkin cannot express (empty,
+// contains " and ", or a key with "=").
+func BuildAnnotationQuery(tags map[string]string, annotations []string) (string, error) {
+	const operation = "zipkin.annotationQuery"
+	keys := make([]string, 0, len(tags))
+	for k := range tags {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	all := make([]term, 0, len(keys)+len(annotations))
+	for _, k := range keys {
+		all = append(all, term{key: k, value: tags[k]})
+	}
+	for _, a := range annotations {
+		all = append(all, term{key: a, bare: true})
+	}
+	parts := make([]string, 0, len(all))
+	for _, tm := range all {
+		if tm.key == "" {
+			return "", ValidationError(operation, "empty term")
+		}
+		if !tm.serverSide() {
+			return "", ValidationError(operation, `a term must not contain " and " (or "=" in a key)`)
+		}
+		parts = append(parts, tm.text())
+	}
+	return strings.Join(parts, " and "), nil
+}

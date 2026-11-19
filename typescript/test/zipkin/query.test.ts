@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_SEARCH_LIMIT,
+  DEFAULT_SEARCH_WINDOW_MS,
   NotFoundError,
   TRACE_MANY_CHUNK,
   ValidationError,
@@ -296,13 +297,15 @@ describe("searchTraces", () => {
     });
   });
 
-  it("defaults end to now, omits lookback without start and validates the window", async () => {
+  it("defaults to the last hour without start and validates the window", async () => {
     const { server, query } = await setup({ "/api/v2/traces": "getTraces.defaults" });
     await query.searchTraces({}, { signal: new AbortController().signal });
     expect(Object.fromEntries(params(server.requests[0]))).toEqual({
       endTs: String(NOW),
+      lookback: String(DEFAULT_SEARCH_WINDOW_MS),
       limit: "20",
     });
+    expect(DEFAULT_SEARCH_WINDOW_MS).toBe(3_600_000);
     await query.searchTraces();
     await expect(
       query.searchTraces({ start: new Date(NOW + 1), end: new Date(NOW) }),
@@ -441,7 +444,10 @@ describe("construction", () => {
     const q = ZipkinQueryClient.fromEnv({ url: "http://127.0.0.1:1" });
     await q.close();
     await q.close();
-    await expect(q.listServices()).rejects.toMatchObject({ code: "CONFIG" });
+    await expect(q.listServices()).rejects.toMatchObject({
+      code: "CANCELLED",
+      message: "zipkin.listServices: client is closed",
+    });
   });
 });
 

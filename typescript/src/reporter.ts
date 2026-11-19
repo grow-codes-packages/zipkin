@@ -1,7 +1,14 @@
 // Service-owned: ZipkinReporter — sends Zipkin v2 JSON spans to POST /api/v2/spans.
 
 import { gzipSync } from "node:zlib";
-import { ConfigError, HttpTransport, type TransportOptions } from "./core/index.js";
+import {
+  CancelledError,
+  ConfigError,
+  HttpTransport,
+  type RequestOptions,
+  type TransportOptions,
+  type TransportResponse,
+} from "./core/index.js";
 import { ZipkinConfig, type ZipkinConfigOptions } from "./config.js";
 import { normalizeZipkinSpan, type ZipkinSpanInput } from "./model.js";
 
@@ -14,12 +21,27 @@ export interface TransportSource {
   readonly config: ZipkinConfig;
 }
 
+/**
+ * The Zipkin transport: the generated {@link HttpTransport} with one parity rule on top — a call
+ * after `close()` throws `CancelledError` ("client is closed"), as in the other four languages.
+ */
+class ZipkinTransport extends HttpTransport {
+  override request<T = unknown>(options: RequestOptions): Promise<TransportResponse<T>> {
+    if (this.closed) {
+      const method = (options.method ?? "GET").toUpperCase();
+      const operation = options.operation ?? `${method} ${options.path.split("?")[0] ?? ""}`;
+      return Promise.reject(new CancelledError(`${operation}: client is closed`));
+    }
+    return super.request<T>(options);
+  }
+}
+
 /** Builds the HTTP transport for a Zipkin config (extra headers are the only credentials). */
 export function createZipkinTransport(
   config: ZipkinConfig,
   internals: ZipkinInternals = {},
 ): HttpTransport {
-  return new HttpTransport({ ...internals, config, knownSecrets: () => config.knownSecrets() });
+  return new ZipkinTransport({ ...internals, config, knownSecrets: () => config.knownSecrets() });
 }
 
 /** @internal */

@@ -117,7 +117,12 @@ nav:
   - Quickstart: quickstart.md
   - Configuration: configuration.md
   - Client: client.md
-  - Functions: functions.md
+  - Functions:
+      - functions.md
+      - Client and status: functions/client.md
+      - Span reporter: functions/reporter.md
+      - Trace queries: functions/query.md
+      - Tracing setup: functions/tracing-setup.md
   - Tracing: tracing.md
   - Error handling: errors.md
   - Hooks and logger: hooks.md

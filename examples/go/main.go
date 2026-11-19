@@ -89,8 +89,8 @@ func run() error {
 	}
 	fmt.Printf("reported trace %s: %d spans\n", trace.TraceID, len(trace.Spans))
 
-	// 2. OpenTelemetry tracing with the native Zipkin v2 JSON exporter.
-	h, err := zipkin.InitTracing(ctx, zipkin.TracingConfig{ServiceName: "example-otel", DisableSetGlobal: true})
+	// 2. OpenTelemetry tracing with the native Zipkin v2 JSON exporter (client endpoint and settings).
+	h, err := client.InitTracing(ctx, zipkin.TracingConfig{ServiceName: "example-otel", DisableSetGlobal: true})
 	if err != nil {
 		return err
 	}

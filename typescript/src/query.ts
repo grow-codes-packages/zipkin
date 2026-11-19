@@ -81,6 +81,8 @@ export interface ZipkinDependencyOptions extends DependencyOptions, QueryCallOpt
 
 /** Default `limit` of {@link ZipkinQueryClient.searchTraces} (SPEC §5). */
 export const DEFAULT_SEARCH_LIMIT = 20;
+/** Window of {@link ZipkinQueryClient.searchTraces} when no `start` is given: the last hour. */
+export const DEFAULT_SEARCH_WINDOW_MS = 3_600_000;
 /**
  * Most trace ids sent in one `/api/v2/traceMany` request: 100 × 33 characters keeps the request
  * line under Armeria's default HTTP/1 limit of 4096 bytes.
@@ -333,7 +335,8 @@ export class ZipkinQueryClient extends BaseTraceQueryClient {
   /**
    * SPEC §5 search: `service` → `serviceName`, `operation` → `spanName`, `tags` → exact tag
    * terms (see {@link ZipkinTraceQuery.tags}), durations in µs, `endTs` = `end` (default now),
-   * `lookback` = `end - start` (server default 24 h without `start`), `limit` default 20. Returns
+   * `lookback` = `end - start` (last 1 h without `start`, like every tracing package), `limit`
+   * default 20. Returns
    * one summary per trace (root = the span without a parent, else the earliest).
    */
   async searchTraces(
@@ -342,7 +345,7 @@ export class ZipkinQueryClient extends BaseTraceQueryClient {
   ): Promise<TraceSummary[]> {
     const operation = "zipkin.searchTraces";
     const endMs = epochMs(query.end ?? new Date(this.#now()), "end", operation);
-    let lookbackMs: number | undefined;
+    let lookbackMs = DEFAULT_SEARCH_WINDOW_MS;
     if (query.start !== undefined) {
       const startMs = epochMs(query.start, "start", operation);
       if (startMs > endMs) throw new ValidationError(`${operation}: start must not be after end`);
@@ -350,6 +353,7 @@ export class ZipkinQueryClient extends BaseTraceQueryClient {
     }
     const native: ZipkinTraceQuery = {
       endTs: endMs,
+      lookbackMs,
       limit: query.limit ?? DEFAULT_SEARCH_LIMIT,
     };
     if (query.service !== undefined) native.serviceName = query.service;
@@ -357,7 +361,6 @@ export class ZipkinQueryClient extends BaseTraceQueryClient {
     if (query.tags !== undefined) native.tags = query.tags;
     if (query.minDurationMicros !== undefined) native.minDurationMicros = query.minDurationMicros;
     if (query.maxDurationMicros !== undefined) native.maxDurationMicros = query.maxDurationMicros;
-    if (lookbackMs !== undefined) native.lookbackMs = lookbackMs;
     if (opts.signal !== undefined) native.signal = opts.signal;
     const traces = await this.getTraces(native);
     return traces.map(summarizeZipkinTrace).filter((s): s is TraceSummary => s !== null);

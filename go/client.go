@@ -1,12 +1,14 @@
 package zipkin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,6 +23,11 @@ type Client struct {
 	query     *QueryClient
 	reporter  *Reporter
 	closeOnce sync.Once
+	closed    atomic.Bool
+
+	mu        sync.Mutex
+	reporters []*Reporter
+	handles   []*TracingHandle
 }
 
 // NewClient validates cfg and returns a client.
@@ -89,8 +96,8 @@ func (c *Client) Query() *QueryClient { return c.query }
 func (c *Client) Reporter() *Reporter { return c.reporter }
 
 // Health checks liveness with GET /health. Status is Zipkin's word: "UP", or "DOWN"
-// (HTTP 503) when the storage fails; Details hold "httpStatus" and the "zipkin"
-// component status. It reports an unreachable or unhealthy service in the result; it
+// (HTTP 503) when the storage fails; Details hold "httpStatus", the "zipkin"
+// component status and its "storage" details (compact JSON). It reports an unreachable or unhealthy service in the result; it
 // fails only for CANCELLED and CONFIG.
 func (c *Client) Health(ctx context.Context) (HealthStatus, error) {
 	res, err := c.transport.do(ctx, &request{Method: http.MethodGet, Path: "/health", Operation: "health", NoRetry: true, RawStatus: true})
@@ -104,7 +111,8 @@ func (c *Client) Health(ctx context.Context) (HealthStatus, error) {
 	var body struct {
 		Status string `json:"status"`
 		Zipkin struct {
-			Status string `json:"status"`
+			Status  string          `json:"status"`
+			Details json.RawMessage `json:"details"`
 		} `json:"zipkin"`
 	}
 	_ = json.Unmarshal(res.Body, &body)
@@ -112,6 +120,10 @@ func (c *Client) Health(ctx context.Context) (HealthStatus, error) {
 	hs := HealthStatus{Status: body.Status, Details: map[string]string{"httpStatus": strconv.Itoa(res.Status)}}
 	if body.Zipkin.Status != "" {
 		hs.Details["zipkin"] = body.Zipkin.Status
+	}
+	var storage bytes.Buffer
+	if len(body.Zipkin.Details) > 0 && json.Compact(&storage, body.Zipkin.Details) == nil && storage.String() != "null" {
+		hs.Details["storage"] = storage.String()
 	}
 	switch {
 	case !ok:
@@ -138,31 +150,32 @@ func (c *Client) Ping(ctx context.Context) (time.Duration, error) {
 // ServerVersion returns the Zipkin version from GET /info ("3.6.1"). It returns
 // UNSUPPORTED when the server exposes no version.
 func (c *Client) ServerVersion(ctx context.Context) (string, error) {
-	res, err := c.transport.do(ctx, &request{Method: http.MethodGet, Path: "/info", Operation: "serverVersion"})
+	info, err := c.ServerInfo(ctx)
 	if err != nil {
-		if CodeOf(err) == ErrorCodeNotFound {
-			return "", UnsupportedError("serverVersion", "the server exposes no version")
-		}
 		return "", err
 	}
-	var body struct {
-		Zipkin struct {
-			Version string `json:"version"`
-		} `json:"zipkin"`
-	}
-	if err := res.decodeJSON("serverVersion", &body); err != nil {
-		return "", err
-	}
-	if body.Zipkin.Version == "" {
+	if info.Version == "" {
 		return "", UnsupportedError("serverVersion", "the server exposes no version")
 	}
-	return body.Zipkin.Version, nil
+	return info.Version, nil
 }
 
-// Close releases resources, including the reporter's connections. It is
-// idempotent; later calls on the client fail with CANCELLED.
+// Close shuts down the tracing handles created by InitTracing (flushing their batch
+// processors), closes the reporters (Reporter, CreateReporter) and releases the
+// connections. It is idempotent; later calls on the client fail with CANCELLED.
 func (c *Client) Close() error {
 	c.closeOnce.Do(func() {
+		c.closed.Store(true)
+		c.mu.Lock()
+		handles, reporters := c.handles, c.reporters
+		c.handles, c.reporters = nil, nil
+		c.mu.Unlock()
+		for _, h := range handles {
+			_ = h.Shutdown(context.Background())
+		}
+		for _, r := range reporters {
+			r.closeOwned()
+		}
 		c.reporter.closeOwned()
 		c.transport.close()
 	})

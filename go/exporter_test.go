@@ -87,10 +87,10 @@ func TestSpanExporterMapping(t *testing.T) {
 	if _, ok := p.Tags["host.name"]; ok {
 		t.Error("resource attributes must not become tags")
 	}
-	if len(p.Annotations) != 2 || p.Annotations[0].Value != "plain-event" || p.Annotations[1].Value != `{"go-event":{"k":"v","n":"2"}}` {
+	if len(p.Annotations) != 2 || p.Annotations[0].Value != "plain-event" || p.Annotations[1].Value != `{"go-event":{"k":"v","n":2}}` {
 		t.Fatalf("annotations %+v", p.Annotations)
 	}
-	if ev := AnnotationToEvent(p.Annotations[1]); ev.Name != "go-event" || ev.Attributes["n"] != "2" {
+	if ev := AnnotationToEvent(p.Annotations[1]); ev.Name != "go-event" || ev.Attributes["n"] != int64(2) {
 		t.Fatalf("event round trip %+v", ev)
 	}
 	if c.Kind != KindClient || c.ParentID != p.ID || c.TraceID != p.TraceID || c.RemoteEndpoint == nil ||
@@ -328,35 +328,28 @@ func TestRemoteEndpointAndResourceTags(t *testing.T) {
 		s.End()
 	}
 	start("ip4", trace.SpanKindClient, attribute.String("network.peer.address", "10.1.2.3"), attribute.Int("server.port", 8443))
-	start("ip6", trace.SpanKindProducer, attribute.String("peer.service", "kafka"), attribute.String("network.peer.address", "::1"),
-		attribute.String("network.peer.port", "9092"))
-	start("badport", trace.SpanKindClient, attribute.String("net.peer.name", "db"), attribute.Int("server.port", 70000),
-		attribute.String("network.peer.port", "x"), attribute.Bool("net.peer.port", true))
+	start("ip6", trace.SpanKindProducer, attribute.String("peer.service", "kafka"), attribute.String("network.peer.address", "::1"))
+	start("addr", trace.SpanKindClient, attribute.String("server.address", "api"), attribute.String("net.peer.name", "db"))
+	start("nonstring", trace.SpanKindClient, attribute.Int("peer.service", 7), attribute.String("net.peer.name", "db"))
 	start("none", trace.SpanKindClient, attribute.Int("server.port", 80))
-	start("floatport", trace.SpanKindClient, attribute.String("peer.service", "f"), attribute.Float64("server.port", 1.5), attribute.Float64("network.peer.port", 8080))
-	start("override", trace.SpanKindServer, attribute.String("service.version", "span-wins"))
+	start("server", trace.SpanKindServer, attribute.String("peer.service", "ignored"), attribute.String("service.version", "span"))
 	by := spansByName(srv.all())
-	if e := by["ip4"].RemoteEndpoint; e == nil || e.ServiceName != "10.1.2.3" || e.IPv4 != "10.1.2.3" || e.Port != 8443 {
-		t.Fatalf("ip4 %+v", e)
+	// The remote endpoint carries the service name only (the TypeScript mapping table).
+	for name, want := range map[string]string{"ip4": "10.1.2.3", "ip6": "kafka", "addr": "api", "nonstring": "db"} {
+		if e := by[name].RemoteEndpoint; e == nil || *e != (Endpoint{ServiceName: want}) {
+			t.Fatalf("%s %+v", name, e)
+		}
 	}
-	if e := by["ip6"].RemoteEndpoint; e == nil || e.ServiceName != "kafka" || e.IPv6 != "::1" || e.Port != 9092 {
-		t.Fatalf("ip6 %+v", e)
+	if by["none"].RemoteEndpoint != nil || by["server"].RemoteEndpoint != nil {
+		t.Fatal("no remote endpoint without a name or for SERVER spans")
 	}
-	if e := by["badport"].RemoteEndpoint; e == nil || e.ServiceName != "db" || e.Port != 0 {
-		t.Fatalf("badport %+v", e)
+	for k := range by["ip4"].Tags {
+		if k == "service.version" || k == "deployment.environment.name" || k == "host.name" {
+			t.Fatalf("resource attributes must not become tags: %v", by["ip4"].Tags)
+		}
 	}
-	if e := by["floatport"].RemoteEndpoint; e == nil || e.Port != 8080 {
-		t.Fatalf("floatport %+v", e)
-	}
-	if e := by["none"].RemoteEndpoint; e != nil {
-		t.Fatalf("none %+v", e)
-	}
-	tags := by["ip4"].Tags
-	if tags["service.version"] != "1.2.3" || tags["deployment.environment.name"] != "staging" || tags["host.name"] != "" {
-		t.Fatalf("resource tags %v", tags)
-	}
-	if by["override"].Tags["service.version"] != "span-wins" {
-		t.Fatal("span attributes win over resource tags")
+	if by["server"].Tags["service.version"] != "span" {
+		t.Fatal("span attributes are kept")
 	}
 }
 

@@ -269,7 +269,7 @@ describe("ZipkinClient", () => {
     await client.close();
     await client.close();
     expect(fake.spans.map((s) => s.name)).toEqual(["pending-span"]);
-    await expect(client.ping()).rejects.toMatchObject({ code: "CONFIG" });
+    await expect(client.ping()).rejects.toMatchObject({ code: "CANCELLED" });
     expect(() => client.initTracing({ serviceName: "x" })).toThrow(ConfigError);
   });
 
