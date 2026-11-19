@@ -20,7 +20,7 @@
     <maven.compiler.release>17</maven.compiler.release>
     <!-- version of the package under test; the Dockerfile passes the built version -->
     <sdk.version>0.1.0</sdk.version>
-    <junit.version>5.14.4</junit.version>
+    <junit.version>6.1.3</junit.version>
     <!-- the image build runs the suite once without a service (everything skipped) -->
     <integration.failIfNoTests>true</integration.failIfNoTests>
   </properties>
@@ -55,7 +55,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.15.0</version>
+        <version>3.16.0</version>
         <configuration>
           <release>17</release>
           <compilerArgs>
@@ -67,7 +67,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.6.0</version>
+        <version>3.6.1</version>
         <configuration>
           <trimStackTrace>false</trimStackTrace>
           <redirectTestOutputToFile>false</redirectTestOutputToFile>
