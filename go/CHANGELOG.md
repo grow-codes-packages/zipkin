@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/grow-codes-packages/zipkin/compare/go/v0.1.1...go/v0.2.0) (2026-11-20)
+
+
+### Features
+
+* sync zipkin to sdk-kit 0.4.0 (foundation API) ([#16](https://github.com/grow-codes-packages/zipkin/issues/16)) ([a5a55b6](https://github.com/grow-codes-packages/zipkin/commit/a5a55b6aca3edf8572c20ac35c3ef0ce58dc049e))
+
 ## [0.1.1](https://github.com/grow-codes-packages/zipkin/compare/go/v0.1.0...go/v0.1.1) (2026-11-19)
 
 
