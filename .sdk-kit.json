@@ -444,6 +444,11 @@
       "generated": false
     },
     {
+      "path": "go/AGENTS.md",
+      "sha256": "c09e19436d3a94b7a48bc5fa965f6c540fb0f95839a160673aa2d6100190fa2d",
+      "generated": true
+    },
+    {
       "path": "go/Makefile",
       "sha256": "22ab526cc7e8a774b37026c37c2956cd4456b20dd8d6a15d2ef4a1b5c87cf390",
       "generated": true
@@ -506,6 +511,11 @@
     {
       "path": "go/core_hooks.go",
       "sha256": "985bd1a6716688dfcf21e69e2f0142f22775ad34389f47cee2d7db158a8f7128",
+      "generated": true
+    },
+    {
+      "path": "go/core_key.go",
+      "sha256": "6cdaaadf438e2e6b775a6f9d2815776a35f11b8ea7701a275ebee0d98a790d3f",
       "generated": true
     },
     {
@@ -680,7 +690,7 @@
     },
     {
       "path": "go/version.go",
-      "sha256": "718bf4e2a1d39eb7187d093bb5c2ab31d52bf0ebe177d894e3bd532b8475834f",
+      "sha256": "82e2dfc03f80f3ed33f49fa8a973699608aa4c9de7e0d873aa17e07e688a8eb1",
       "generated": false
     },
     {
@@ -1119,6 +1129,11 @@
       "generated": true
     },
     {
+      "path": "java/src/main/resources/META-INF/grow/zipkin/AGENTS.md",
+      "sha256": "24c41879ba4b95b8c14253477158372dd0a18a851496907bf696ebd518e9f14c",
+      "generated": true
+    },
+    {
       "path": "java/src/main/resources/codes/grow/packages/zipkin/core/sdk.properties",
       "sha256": "57aae76410dea891cbc0bb73d7fc16a3f3d6a0a7a322231fd9f87737505eba36",
       "generated": true
@@ -1269,13 +1284,18 @@
       "generated": false
     },
     {
+      "path": "python/src/grow_zipkin/AGENTS.md",
+      "sha256": "dc49e5176ae3282e694859eaabf2a6cf035fc81d206ff6f7f6a4701997a6a1cd",
+      "generated": true
+    },
+    {
       "path": "python/src/grow_zipkin/__init__.py",
       "sha256": "7c7152ec18cda447b1cfa4512bae39b68a531df6efa82a1e5fc266efba73ee56",
       "generated": false
     },
     {
       "path": "python/src/grow_zipkin/_core/__init__.py",
-      "sha256": "3a415f5b8301666ef8a49bb2c391b4230b7d64500b650b19dd12ea267b80b232",
+      "sha256": "68ff9e91bca655faf063b6d4758a8c1850bd0f8b44aa7e605f1c0a014aa95441",
       "generated": true
     },
     {
@@ -1330,7 +1350,7 @@
     },
     {
       "path": "python/src/grow_zipkin/_core/useragent.py",
-      "sha256": "4b1e815563d4c16266cfb0f1f4ba8ae665e76fd7957fb6820fd96d5baa8b4be7",
+      "sha256": "2d746b799cefa487c8f736cb47d3cb6a9a70f2e6aec56d2b739a71f7a79815ad",
       "generated": true
     },
     {
@@ -1370,7 +1390,7 @@
     },
     {
       "path": "python/src/grow_zipkin/_version.py",
-      "sha256": "a77fa54f51fdf50ebdb72c3a3172a1bc4dbc18af2125c9b46a337b7947d33a8e",
+      "sha256": "7d1c20542e22e5d3055dc6738c8960fc7438ab08ab86dcca8738bc380e42f206",
       "generated": false
     },
     {
@@ -1502,6 +1522,11 @@
       "path": "rust/.gitignore",
       "sha256": "44e19e795df0e74663b0affde31f9aec4e08ec88787e680b404381b33134987a",
       "generated": false
+    },
+    {
+      "path": "rust/AGENTS.md",
+      "sha256": "a1cfe67c9fe0ebb7058258818da998a464303148de43a473666c8217217f2df0",
+      "generated": true
     },
     {
       "path": "rust/Cargo.toml",
@@ -1824,6 +1849,11 @@
       "generated": false
     },
     {
+      "path": "typescript/AGENTS.md",
+      "sha256": "37470ce1ea0a6aa595150af01802c0da653cc36cabef46f957fb2355cd56eeac",
+      "generated": true
+    },
+    {
       "path": "typescript/Makefile",
       "sha256": "33895a022f9cf276b4526d1b22bce08a253664bb827cef2854544d78b14088f7",
       "generated": false
@@ -1945,7 +1975,7 @@
     },
     {
       "path": "typescript/src/core/version.ts",
-      "sha256": "389e7a9c104e4d66296ec6fadc0984a3e8640dac60be21c1b3d2d68806b30e1f",
+      "sha256": "d69e5edb5fcf7bcc5c781b2068e36cb9ad89dc62b41d0a07a4c3a1cc59ce6f82",
       "generated": true
     },
     {
