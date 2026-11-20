@@ -51,6 +51,7 @@
   },
   "files": [
     "lib",
+    "AGENTS.md",
     "README.md",
     "LICENSE",
     "NOTICE"

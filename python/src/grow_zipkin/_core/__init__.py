@@ -45,7 +45,7 @@ from .redaction import (
 )
 from .resources import ResourceRegistry, Stoppable
 from .retry import RetryPolicy, parse_retry_after
-from .useragent import SDK_NAME, user_agent
+from .useragent import PACKAGE_KEY, SDK_NAME, user_agent
 
 ZipkinError = ServiceError
 
@@ -89,6 +89,7 @@ __all__ = [
     "RETRY_AFTER_HEADERS",
     "retry_after_from_headers",
     "SDK_NAME",
+    "PACKAGE_KEY",
     "user_agent",
     # hooks + logging
     "Hooks",
