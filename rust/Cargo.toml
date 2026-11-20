@@ -1,7 +1,7 @@
 # Created by sdk-kit 0.1.0; owned by this repository (keep the category features).
 [package]
 name = "grow-zipkin"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.88"
 # MSRV-aware dependency resolution (picks versions that still build on rust-version).
